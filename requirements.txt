@@ -1,0 +1,10 @@
+# The web framework, and the only thing rendering a page.
+Flask
+
+# The same library the openstack command-line client talks to the cloud
+# through, including the config layer that assembles connections.
+openstacksdk
+
+# Pulled in by openstacksdk anyway, named here because Stratus imports its
+# exception types directly to tell one login failure from another.
+keystoneauth1

@@ -1,0 +1,101 @@
+:root {
+  color-scheme: light dark;
+  --bg: Canvas;
+  --fg: CanvasText;
+  --rule: color-mix(in srgb, CanvasText 25%, Canvas);
+  --dim: color-mix(in srgb, CanvasText 55%, Canvas);
+  --accent: color-mix(in srgb, CanvasText 10%, Canvas);
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 15px/1.5 system-ui, sans-serif;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 1.2rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.brand {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  color: inherit;
+}
+
+.whoami {
+  margin-left: auto;
+  color: var(--dim);
+}
+
+main {
+  max-width: 60rem;
+  margin: 0 auto;
+  padding: 1.5rem 1.2rem;
+}
+
+h1 { font-size: 1.3rem; margin-top: 0; }
+
+a { color: inherit; }
+
+button {
+  font: inherit;
+  padding: 0.35rem 0.9rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--accent);
+  color: inherit;
+  cursor: pointer;
+}
+
+button:hover { border-color: var(--dim); }
+
+input {
+  font: inherit;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--bg);
+  color: inherit;
+}
+
+.login {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 26rem;
+  margin: 2rem auto;
+}
+
+.login h1 { margin-bottom: 0.5rem; }
+.login label { color: var(--dim); font-size: 0.85rem; }
+.login label + input { margin-bottom: 0.5rem; }
+.login button { margin-top: 0.5rem; justify-self: start; }
+
+.flash {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--rule);
+  border-left-width: 3px;
+  border-radius: 3px;
+}
+
+.flash.error { border-left-color: crimson; }
+
+dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.3rem 1.5rem;
+  margin: 0;
+}
+
+dt { color: var(--dim); }
+dd { margin: 0; }
+
+.note { color: var(--dim); margin-top: 2rem; }

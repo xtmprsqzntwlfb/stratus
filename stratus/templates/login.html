@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Log in &mdash; Stratus{% endblock %}
+
+{% block content %}
+<form class="login" method="post">
+  <h1>Log in</h1>
+  {% for field in fields %}
+  <label for="{{ field.name }}">{{ field.label }}</label>
+  <input id="{{ field.name }}"
+         name="{{ field.name }}"
+         type="{{ field.kind }}"
+         placeholder="{{ field.hint }}"
+         value="{{ '' if field.secret else values[field.name] }}"
+         required>
+  {% endfor %}
+  <button type="submit">Log in</button>
+</form>
+{% endblock %}

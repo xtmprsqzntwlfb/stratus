@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Stratus{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='stratus.css') }}">
+</head>
+<body>
+  <header>
+    <a class="brand" href="{{ url_for('ui.index') }}">Stratus</a>
+    {% if session.cloud %}
+      <span class="whoami">{{ session.cloud.username }}</span>
+      <form method="post" action="{{ url_for('ui.logout') }}">
+        <button type="submit">Log out</button>
+      </form>
+    {% endif %}
+  </header>
+  <main>
+    {% for category, message in get_flashed_messages(with_categories=true) %}
+      <p class="flash {{ category }}">{{ message }}</p>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
