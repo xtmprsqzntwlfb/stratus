@@ -4,8 +4,7 @@ A lightweight web interface for OpenStack.
 
 Stratus shows you what the `openstack` command-line client shows you, in a
 browser. It is built on the same library the CLI uses, `openstacksdk`, and it
-deliberately stops where the CLI stops: if `openstack server list` does not
-report a field, no Stratus page invents one.
+deliberately stops where the CLI stops.
 
 ## Non-goals
 
