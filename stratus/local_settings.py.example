@@ -1,0 +1,33 @@
+"""Settings for one deployment. Copy to local_settings.py and edit.
+
+Only names in capitals are read. Anything in stratus/config.py can be set
+here, and a STRATUS_ environment variable still overrides whatever this says.
+"""
+
+# The machine running OpenStack. Nothing reads this on its own; it is here so
+# the endpoint below has one place to change, the way Horizon's
+# local_settings.py uses OPENSTACK_HOST.
+OPENSTACK_HOST = "127.0.0.1"
+
+# The Keystone v3 endpoint, pre-filling the login form. Where it sits depends
+# on how the cloud was deployed, so it is spelled out rather than guessed:
+#
+#   DevStack, everything proxied through Apache on port 80
+AUTH_URL = f"http://{OPENSTACK_HOST}/identity/v3"
+#   Keystone on its own port
+# AUTH_URL = f"https://{OPENSTACK_HOST}:5000/v3"
+
+# Keystone domain of the user, unless the login form says otherwise.
+USER_DOMAIN_NAME = "Default"
+
+# Without a fixed key every restart invalidates the session cookies it signed
+# and logs everyone out. Generate one with:
+#
+#   python3 -c 'import secrets; print(secrets.token_hex(32))'
+#
+# SECRET_KEY = ""
+
+# True, or a path to a CA bundle. False accepts any TLS certificate, which is
+# a reasonable thing to do against a test cloud with a self-signed one and an
+# unreasonable thing to do anywhere else.
+# VERIFY = True

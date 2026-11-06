@@ -1,10 +1,15 @@
+import os
+
 import pytest
 
 import stratus
 
 
 @pytest.fixture
-def app():
+def app(monkeypatch):
+    # Whatever this machine's local_settings.py says about a real cloud is
+    # none of the tests' business, so point the loader at an empty file.
+    monkeypatch.setenv(stratus.LOCAL_SETTINGS_VARIABLE, os.devnull)
     return stratus.create_app(
         TESTING=True,
         SECRET_KEY="test",

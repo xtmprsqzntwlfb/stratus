@@ -32,20 +32,47 @@ Logging in asks for an *unscoped* token, and that token is the whole of the
 session. Each request turns it back into a connection scoped to whatever
 project the page is about. Nothing is cached in the process.
 
+## Settings
+
+Which cloud Stratus points at is deployment business, so it lives in a
+`local_settings.py` that is not in version control, as it does in Horizon:
+
+```sh
+cp stratus/local_settings.py.example stratus/local_settings.py
+```
+
+Then edit `OPENSTACK_HOST`. The Keystone endpoint is spelled out in that file
+rather than derived from the host, because where it sits depends on the
+deployment: DevStack proxies everything through Apache at
+`http://HOST/identity/v3`, while a cloud running Keystone on its own port
+answers at `https://HOST:5000/v3`. Horizon makes you write that line too.
+
+Settings arrive in three layers, each overriding the one before:
+
+| Layer | For |
+| --- | --- |
+| `stratus/config.py` | Defaults, so Stratus starts with no setup at all |
+| `stratus/local_settings.py` | One deployment. Plain Python, names in capitals |
+| `STRATUS_*` environment | One run, for instance `STRATUS_AUTH_URL=...` |
+
+Set `STRATUS_LOCAL_SETTINGS` to read the middle layer from somewhere other
+than the package directory. Unlike the default file, a path named that way
+must exist, because a typo there is a mistake rather than a cloud nobody
+meant to configure.
+
+Nothing is read from `OS_*` variables or `clouds.yaml`. A sourced `openrc`
+cannot change where Stratus points.
+
 ## Running it
 
 ```sh
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
-STRATUS_SECRET_KEY=$(python3 -c 'import secrets; print(secrets.token_hex(32))') \
-OS_AUTH_URL=https://keystone.example.com:5000/v3 \
 .venv/bin/flask --app stratus run
 ```
 
-`OS_AUTH_URL` only pre-fills the login form, so you can leave it unset and type
-the URL instead. `STRATUS_SECRET_KEY` signs the session cookie; without it
-Stratus generates a random key at startup, which means every restart logs you
-out. Any Flask setting can be passed the same way, prefixed with `STRATUS_`.
+The endpoint in `local_settings.py` only pre-fills the login form, so it can
+be left empty and typed in instead.
 
 ## Status
 

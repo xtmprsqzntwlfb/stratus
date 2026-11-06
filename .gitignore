@@ -2,3 +2,6 @@ __pycache__/
 *.py[cod]
 .venv/
 .env
+
+# Deployment settings, one machine's business only.
+local_settings.py
