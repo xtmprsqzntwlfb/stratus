@@ -19,6 +19,39 @@ These are design constraints, not a backlog:
 - **No plugin system.** Adding a resource means adding a declaration, not
   installing a package.
 
+## Running it locally
+
+Install it, and copy the settings template:
+
+```sh
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
+cp stratus/local_settings.py.example stratus/local_settings.py
+```
+
+Point `OPENSTACK_HOST` in `stratus/local_settings.py` at your cloud:
+
+```python
+OPENSTACK_HOST = "10.0.0.1"
+AUTH_URL = f"http://{OPENSTACK_HOST}/identity/v3"
+```
+
+`AUTH_URL` is a separate line because where Keystone sits depends on the
+deployment. DevStack proxies everything through Apache, so it answers under
+`/identity/v3` on port 80, while a cloud running Keystone on its own port
+answers at `https://{OPENSTACK_HOST}:5000/v3`. Both are in the template, one
+of them commented out. Horizon makes you write this line too.
+
+Then start it:
+
+```sh
+.venv/bin/flask --app stratus run
+```
+
+Stratus is at <http://127.0.0.1:5000/>, and it asks for the same user name,
+password and domain the `openstack` client would. The endpoint only pre-fills
+the login form, so you can leave it unset and type it in instead.
+
 ## How it talks to the cloud
 
 Through `openstacksdk`, and through the same part of it the CLI uses. The
@@ -34,20 +67,7 @@ project the page is about. Nothing is cached in the process.
 
 ## Settings
 
-Which cloud Stratus points at is deployment business, so it lives in a
-`local_settings.py` that is not in version control, as it does in Horizon:
-
-```sh
-cp stratus/local_settings.py.example stratus/local_settings.py
-```
-
-Then edit `OPENSTACK_HOST`. The Keystone endpoint is spelled out in that file
-rather than derived from the host, because where it sits depends on the
-deployment: DevStack proxies everything through Apache at
-`http://HOST/identity/v3`, while a cloud running Keystone on its own port
-answers at `https://HOST:5000/v3`. Horizon makes you write that line too.
-
-Settings arrive in three layers, each overriding the one before:
+Three layers, each overriding the one before:
 
 | Layer | For |
 | --- | --- |
@@ -55,24 +75,12 @@ Settings arrive in three layers, each overriding the one before:
 | `stratus/local_settings.py` | One deployment. Plain Python, names in capitals |
 | `STRATUS_*` environment | One run, for instance `STRATUS_AUTH_URL=...` |
 
-Set `STRATUS_LOCAL_SETTINGS` to read the middle layer from somewhere other
-than the package directory. Unlike the default file, a path named that way
-must exist, because a typo there is a mistake rather than a cloud nobody
-meant to configure.
+The middle layer is not in version control, as in Horizon. Set
+`STRATUS_LOCAL_SETTINGS` to read it from somewhere other than the package
+directory; unlike the default file, a path named that way must exist, because
+a typo there is a mistake rather than a cloud nobody meant to configure.
 
-Nothing is read from `OS_*` variables or `clouds.yaml`. A sourced `openrc`
-cannot change where Stratus points.
-
-## Running it
-
-```sh
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/flask --app stratus run
-```
-
-The endpoint in `local_settings.py` only pre-fills the login form, so it can
-be left empty and typed in instead.
+Nothing is read from `OS_*` variables or `clouds.yaml`.
 
 ## Status
 
