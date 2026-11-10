@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name }} &mdash; Stratus{% endblock %}
+
+{% block content %}
+<p class="crumbs"><a href="{{ url_for('ui.projects') }}">Projects</a></p>
+
+<h1>{{ project.name }}</h1>
+
+<dl>
+  {% for label, value in fields %}
+  <dt>{{ label }}</dt><dd>{{ value }}</dd>
+  {% endfor %}
+</dl>
+{% endblock %}

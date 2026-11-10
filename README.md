@@ -84,8 +84,14 @@ Nothing is read from `OS_*` variables or `clouds.yaml`.
 
 ## Status
 
-Early. Right now Stratus can log in to Keystone and log out again. See the
-commit log for what has landed since.
+Early. Stratus can log in, list the projects an account can reach and show
+one of them, matching `openstack project list --my-projects` and `openstack
+project show`. Resource listings come next.
+
+A project is named in the path, as in `/projects/<id>`, rather than being a
+current project held in the session. That follows the CLI, where scope is an
+argument to each command rather than a mode you switch into, and it means a
+page says which project it is about and two of them can be open at once.
 
 ## License
 

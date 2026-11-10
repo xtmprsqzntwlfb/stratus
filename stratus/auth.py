@@ -101,6 +101,20 @@ def connection(project_id=None):
     return _connect("v3token", **parameters)
 
 
+def token_still_works():
+    """Whether Keystone still recognises the token in the session.
+
+    Worth asking because Keystone answers 401 both to a token that has
+    expired and to a request to scope a good token somewhere it may not go,
+    and those two deserve opposite responses.
+    """
+    try:
+        connection().session.get_user_id()
+    except keystoneauth1.exceptions.Unauthorized:
+        return False
+    return True
+
+
 def login_required(view):
     @functools.wraps(view)
     def guarded(*arguments, **keywords):

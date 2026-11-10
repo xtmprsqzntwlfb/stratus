@@ -99,3 +99,30 @@ dt { color: var(--dim); }
 dd { margin: 0; }
 
 .note { color: var(--dim); margin-top: 2rem; }
+
+.crumbs { margin-top: 0; font-size: 0.85rem; }
+.crumbs a { color: var(--dim); }
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+th, td {
+  text-align: left;
+  padding: 0.4rem 0.7rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+th {
+  color: var(--dim);
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+/* Identifiers are long, fixed-width and mostly skimmed for a prefix. */
+td:first-child { font-family: ui-monospace, monospace; font-size: 0.9em; }
+
+.empty { color: var(--dim); font-family: inherit; }
+
+dd { font-family: ui-monospace, monospace; font-size: 0.9em; }
