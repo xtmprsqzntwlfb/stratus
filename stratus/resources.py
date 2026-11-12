@@ -72,13 +72,7 @@ PROJECT_SHOW = (
 
 def networks_of(server):
     """The Networks column: ``net=ip, ip; other=ip``, as the CLI joins it."""
-    addresses = server.addresses or {}
-    return "; ".join(
-        "{}={}".format(
-            network, ", ".join(a["addr"] for a in entries or () if "addr" in a)
-        )
-        for network, entries in sorted(addresses.items())
-    )
+    return addresses_of(server.addresses)
 
 
 def flavor_of(server):
@@ -160,7 +154,10 @@ SERVER_SHOW_SKIPS = frozenset(
 # Keys worth printing only when the server has them.
 SERVER_SHOW_OPTIONAL = frozenset({"admin_password", "fault", "security_groups"})
 
-# The SDK renames what compute returns; the CLI renames it back.
+# The SDK renames what compute returns; the CLI renames it back. Note that
+# project_id is absent: the CLI maps it to tenant_id and then back again a
+# hundred lines later, so the two renames cancel and the field keeps its
+# name. Copying only the first half of that round trip is a mistake.
 SERVER_SHOW_NAMES = {
     "access_ipv4": "accessIPv4",
     "access_ipv6": "accessIPv6",
@@ -180,8 +177,8 @@ SERVER_SHOW_NAMES = {
     "kernel_id": "OS-EXT-SRV-ATTR:kernel_id",
     "launch_index": "OS-EXT-SRV-ATTR:launch_index",
     "launched_at": "OS-SRV-USG:launched_at",
+    "metadata": "properties",
     "power_state": "OS-EXT-STS:power_state",
-    "project_id": "tenant_id",
     "ramdisk_id": "OS-EXT-SRV-ATTR:ramdisk_id",
     "reservation_id": "OS-EXT-SRV-ATTR:reservation_id",
     "root_device_name": "OS-EXT-SRV-ATTR:root_device_name",
@@ -191,6 +188,37 @@ SERVER_SHOW_NAMES = {
     "user_data": "OS-EXT-SRV-ATTR:user_data",
     "vm_state": "OS-EXT-STS:vm_state",
 }
+
+
+# The CLI prints the power state as a word rather than the number compute
+# returns. Index is the number; the gaps are states nova never reports.
+POWER_STATES = (
+    "NOSTATE",
+    "Running",
+    "",
+    "Paused",
+    "Shutdown",
+    "",
+    "Crashed",
+    "Suspended",
+)
+
+
+def power_state(value):
+    try:
+        return POWER_STATES[value]
+    except (IndexError, TypeError):
+        return "N/A"
+
+
+def addresses_of(addresses):
+    """The addresses dict, joined the way both list and show join it."""
+    return "; ".join(
+        "{}={}".format(
+            network, ", ".join(a["addr"] for a in entries or () if "addr" in a)
+        )
+        for network, entries in sorted((addresses or {}).items())
+    )
 
 
 def server_details(connection, server):
@@ -207,10 +235,15 @@ def server_details(connection, server):
     identifier = image.get("id") if isinstance(image, dict) else None
     if identifier:
         try:
-            shown["image"] = f"{connection.image.get_image(identifier).name} ({identifier})"
+            name = connection.image.get_image(identifier).name
+            shown["image"] = f"{name} ({identifier})"
         except openstack.exceptions.SDKException:
             shown["image"] = identifier
     else:
         shown["image"] = NO_IMAGE
+
+    shown["addresses"] = addresses_of(shown.get("addresses"))
+    if "OS-EXT-STS:power_state" in shown:
+        shown["OS-EXT-STS:power_state"] = power_state(shown["OS-EXT-STS:power_state"])
 
     return sorted(shown.items())

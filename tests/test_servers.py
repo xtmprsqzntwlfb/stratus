@@ -176,12 +176,32 @@ class TestServerShow:
         shown = self.details(cloud)
         assert shown["created"] == "2026-11-12T10:00:00Z"
         assert shown["updated"] == "2026-11-12T10:01:00Z"
-        assert shown["OS-EXT-STS:power_state"] == 1
-        assert shown["tenant_id"] == "a-project"
+        assert shown["OS-EXT-STS:power_state"] == "Running"
         assert shown["locked"] is False
         assert shown["config_drive"] == ""
         assert "created_at" not in shown
-        assert "project_id" not in shown
+        assert "power_state" not in shown
+
+    def test_project_id_keeps_its_name(self, cloud):
+        """The CLI maps it to tenant_id and then back, so it does not move."""
+        shown = self.details(cloud)
+        assert shown["project_id"] == "a-project"
+        assert "tenant_id" not in shown
+
+    def test_metadata_is_printed_as_properties(self, cloud):
+        shown = self.details(cloud, metadata={"role": "web"})
+        assert shown["properties"] == {"role": "web"}
+        assert "metadata" not in shown
+
+    def test_the_power_state_is_a_word_not_a_number(self, cloud):
+        assert self.details(cloud, power_state=4)["OS-EXT-STS:power_state"] == "Shutdown"
+        assert self.details(cloud, power_state=99)["OS-EXT-STS:power_state"] == "N/A"
+
+    def test_addresses_are_joined_as_on_the_list_page(self, cloud):
+        shown = self.details(
+            cloud, addresses={"private": [{"addr": "10.0.0.5"}]}
+        )
+        assert shown["addresses"] == "private=10.0.0.5"
 
     def test_an_absent_optional_field_is_left_out(self, cloud):
         assert "fault" not in self.details(cloud)
