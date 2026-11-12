@@ -6,7 +6,7 @@ import unittest.mock as mock
 import keystoneauth1.exceptions
 import pytest
 
-from stratus import auth, views
+from stratus import auth, resources, views
 
 LOGGED_IN = {
     "auth_url": "https://keystone.test/v3",
@@ -85,7 +85,7 @@ def test_the_project_page_is_scoped_to_that_project(client, cloud):
 
 def test_the_project_page_prints_what_project_show_prints(client, cloud):
     page = client.get(f"/projects/{DEMO.id}").get_data(as_text=True)
-    printed = [label for label, _ in views.pairs_of(DEMO, views.PROJECT_SHOW)]
+    printed = [label for label, _ in resources.pairs_of(DEMO, resources.PROJECT_SHOW)]
     assert printed == [
         "description",
         "domain_id",

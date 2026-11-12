@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Servers &mdash; Stratus{% endblock %}
+
+{% block content %}
+<p class="crumbs">
+  <a href="{{ url_for('ui.projects') }}">Projects</a> /
+  <a href="{{ url_for('ui.project', project_id=project_id) }}">project</a>
+</p>
+
+<h1>Servers</h1>
+{% include "listing.html" with context %}
+{% endblock %}

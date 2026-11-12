@@ -6,6 +6,10 @@
 
 <h1>{{ project.name }}</h1>
 
+<ul class="resources">
+  <li><a href="{{ url_for('ui.servers', project_id=project.id) }}">Servers</a></li>
+</ul>
+
 <dl>
   {% for label, value in fields %}
   <dt>{{ label }}</dt><dd>{{ value }}</dd>

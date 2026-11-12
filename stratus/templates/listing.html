@@ -1,0 +1,30 @@
+{# A table of resources, the way the CLI prints one. The first cell of a row
+   carries the link, the first column being the identifier in every listing. #}
+<table>
+  <thead>
+    <tr>
+      {% for column in columns %}
+      <th>{{ column.label }}</th>
+      {% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      {% for cell in row.cells %}
+      <td>
+        {% if loop.first and row.link %}
+        <a href="{{ row.link }}">{{ cell }}</a>
+        {% else %}
+        {{ cell }}
+        {% endif %}
+      </td>
+      {% endfor %}
+    </tr>
+    {% else %}
+    <tr>
+      <td class="empty" colspan="{{ columns | length }}">{{ empty }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

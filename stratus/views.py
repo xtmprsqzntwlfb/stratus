@@ -1,66 +1,15 @@
 """Routes. One blueprint, because there is only ever going to be one."""
 
+import contextlib
 import typing
 
 import flask
 import keystoneauth1.exceptions
+import openstack.exceptions
 
-from . import auth
+from . import auth, resources
 
 bp = flask.Blueprint("ui", __name__)
-
-
-class Column(typing.NamedTuple):
-    """One field of a resource, labelled the way the CLI labels it.
-
-    The CLI's own name for a field and openstacksdk's attribute name are not
-    always the same word, so both are written down.
-    """
-
-    label: str
-    attribute: str
-
-    def of(self, resource):
-        return getattr(resource, self.attribute, None)
-
-
-def rows_of(resources, columns, link=None):
-    """One row per resource, for a list page.
-
-    ``link`` turns a resource into the address its row points at. By
-    convention the first cell carries it, the first column being the
-    identifier in every listing the CLI prints.
-    """
-    return [
-        {
-            "cells": [column.of(resource) for column in columns],
-            "link": link(resource) if link else None,
-        }
-        for resource in resources
-    ]
-
-
-def pairs_of(resource, columns):
-    """(label, value) for each field, for a show page."""
-    return [(column.label, column.of(resource)) for column in columns]
-
-
-# What `openstack project list` prints.
-PROJECT_LIST = (Column("ID", "id"), Column("Name", "name"))
-
-# What `openstack project show` prints, in its order, which is alphabetical
-# by the CLI's name for the field rather than by the SDK's.
-PROJECT_SHOW = (
-    Column("description", "description"),
-    Column("domain_id", "domain_id"),
-    Column("enabled", "is_enabled"),
-    Column("id", "id"),
-    Column("is_domain", "is_domain"),
-    Column("name", "name"),
-    Column("options", "options"),
-    Column("parent_id", "parent_id"),
-    Column("tags", "tags"),
-)
 
 
 class Field(typing.NamedTuple):
@@ -129,6 +78,35 @@ def not_found(error):
     return flask.render_template("not_found.html"), 404
 
 
+@bp.app_errorhandler(openstack.exceptions.NotFoundException)
+def resource_is_gone(missing):
+    """A 404 from the cloud is a 404 here.
+
+    Returned rather than raised through abort(), because an abort inside an
+    error handler is not dispatched to another one.
+    """
+    return not_found(missing)
+
+
+@contextlib.contextmanager
+def scoped(project_id):
+    """A connection into one project, and the two meanings of its refusal.
+
+    Keystone answers 401 both to a token that has expired and to a request
+    to scope a good token into a project it may not enter. Asking the
+    unscoped token its own user id is what tells those apart.
+    """
+    try:
+        yield auth.connection(project_id)
+    except keystoneauth1.exceptions.Unauthorized:
+        if not auth.token_still_works():
+            raise  # the session is over, and the handler above says so
+        # The token is fine, so it is the project that is not: either no
+        # such project, or not one this account may enter. Keystone will not
+        # say which, and neither should this.
+        flask.abort(404)
+
+
 @bp.route("/")
 @auth.login_required
 def index():
@@ -147,12 +125,17 @@ def projects():
     """
     connection = auth.connection()
     mine = connection.identity.user_projects(connection.session.get_user_id())
-    rows = rows_of(
+    rows = resources.rows_of(
         mine,
-        PROJECT_LIST,
+        resources.PROJECT_LIST,
         link=lambda found: flask.url_for("ui.project", project_id=found.id),
     )
-    return flask.render_template("projects.html", columns=PROJECT_LIST, rows=rows)
+    return flask.render_template(
+        "projects.html",
+        columns=resources.PROJECT_LIST,
+        rows=rows,
+        empty="No projects this account can reach.",
+    )
 
 
 @bp.route("/projects/<project_id>")
@@ -164,19 +147,50 @@ def project(project_id):
     one, so that a page says which project it is about the way a CLI
     invocation does, and two of them can be open at once.
     """
-    connection = auth.connection(project_id)
-    try:
+    with scoped(project_id) as connection:
         found = connection.identity.get_project(project_id)
-    except keystoneauth1.exceptions.Unauthorized:
-        if not auth.token_still_works():
-            raise  # the session is over, and the handler above says so
-        # The token is fine, so it is the project that is not: either no
-        # such project or not one this account may enter. Keystone will not
-        # say which, and neither should this.
-        flask.abort(404)
-    return flask.render_template(
-        "project.html", project=found, fields=pairs_of(found, PROJECT_SHOW)
-    )
+        return flask.render_template(
+            "project.html",
+            project=found,
+            fields=resources.pairs_of(found, resources.PROJECT_SHOW),
+        )
+
+
+@bp.route("/projects/<project_id>/servers")
+@auth.login_required
+def servers(project_id):
+    """`openstack server list`."""
+    with scoped(project_id) as connection:
+        found = list(connection.compute.servers())
+        columns = resources.server_list(resources.image_names(connection, found))
+        rows = resources.rows_of(
+            found,
+            columns,
+            link=lambda server: flask.url_for(
+                "ui.server", project_id=project_id, server_id=server.id
+            ),
+        )
+        return flask.render_template(
+            "servers.html",
+            project_id=project_id,
+            columns=columns,
+            rows=rows,
+            empty="No servers in this project.",
+        )
+
+
+@bp.route("/projects/<project_id>/servers/<server_id>")
+@auth.login_required
+def server(project_id, server_id):
+    """`openstack server show`."""
+    with scoped(project_id) as connection:
+        found = connection.compute.get_server(server_id)
+        return flask.render_template(
+            "server.html",
+            project_id=project_id,
+            server=found,
+            fields=resources.server_details(connection, found),
+        )
 
 
 @bp.route("/login", methods=["GET", "POST"])

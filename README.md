@@ -84,9 +84,10 @@ Nothing is read from `OS_*` variables or `clouds.yaml`.
 
 ## Status
 
-Early. Stratus can log in, list the projects an account can reach and show
-one of them, matching `openstack project list --my-projects` and `openstack
-project show`. Resource listings come next.
+Early. Stratus can log in, list the projects an account can reach, and list
+and show the servers in one, matching `openstack project list
+--my-projects`, `openstack project show`, `openstack server list` and
+`openstack server show`. Other resources come next.
 
 A project is named in the path, as in `/projects/<id>`, rather than being a
 current project held in the session. That follows the CLI, where scope is an

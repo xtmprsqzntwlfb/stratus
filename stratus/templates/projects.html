@@ -3,35 +3,5 @@
 
 {% block content %}
 <h1>Projects</h1>
-
-<table>
-  <thead>
-    <tr>
-      {% for column in columns %}
-      <th>{{ column.label }}</th>
-      {% endfor %}
-    </tr>
-  </thead>
-  <tbody>
-    {% for row in rows %}
-    <tr>
-      {% for cell in row.cells %}
-      <td>
-        {% if loop.first and row.link %}
-        <a href="{{ row.link }}">{{ cell }}</a>
-        {% else %}
-        {{ cell }}
-        {% endif %}
-      </td>
-      {% endfor %}
-    </tr>
-    {% else %}
-    <tr>
-      <td class="empty" colspan="{{ columns | length }}">
-        No projects this account can reach.
-      </td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+{% include "listing.html" with context %}
 {% endblock %}
