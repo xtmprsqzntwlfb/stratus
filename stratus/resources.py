@@ -47,9 +47,29 @@ def rows_of(resources, columns, link=None):
     ]
 
 
+def readable(value):
+    """A value as a page should show it rather than as Python repr()s it.
+
+    Nested dictionaries and lists are what the CLI runs through its own
+    formatting columns, and printing a raw ``{'disk': 0, 'ram': 0}`` into a
+    page is the one thing neither of them does.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, dict):
+        pairs = ((key, readable(item)) for key, item in sorted(value.items()))
+        # Keys with nothing behind them are noise: a flavor carries a dozen
+        # of them. Compared against "" rather than tested for truth, so that
+        # a disk of 0 or a public flag of False still counts as an answer.
+        return ", ".join(f"{key}={item}" for key, item in pairs if item != "")
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return ", ".join(str(readable(item)) for item in value)
+    return value
+
+
 def pairs_of(resource, columns):
     """(label, value) for each field, for a show page."""
-    return [(column.label, column.of(resource)) for column in columns]
+    return [(column.label, readable(column.of(resource))) for column in columns]
 
 
 # `openstack project list`
@@ -127,7 +147,7 @@ def server_list(images):
 
 
 # `openstack server show` prints the whole resource rather than a chosen few
-# fields, so it is described by what to leave out and what to rename instead.
+# fields, so it is described by what to leave out rather than what to put in.
 
 # Keys openstacksdk adds for its own convenience, which no API returns.
 SERVER_SHOW_SKIPS = frozenset(
@@ -154,44 +174,9 @@ SERVER_SHOW_SKIPS = frozenset(
 # Keys worth printing only when the server has them.
 SERVER_SHOW_OPTIONAL = frozenset({"admin_password", "fault", "security_groups"})
 
-# The SDK renames what compute returns; the CLI renames it back. Note that
-# project_id is absent: the CLI maps it to tenant_id and then back again a
-# hundred lines later, so the two renames cancel and the field keeps its
-# name. Copying only the first half of that round trip is a mistake.
-SERVER_SHOW_NAMES = {
-    "access_ipv4": "accessIPv4",
-    "access_ipv6": "accessIPv6",
-    "admin_password": "adminPass",
-    "attached_volumes": "volumes_attached",
-    "availability_zone": "OS-EXT-AZ:availability_zone",
-    "compute_host": "OS-EXT-SRV-ATTR:host",
-    "created_at": "created",
-    "disk_config": "OS-DCF:diskConfig",
-    "fault": "fault",
-    "has_config_drive": "config_drive",
-    "host_id": "hostId",
-    "hostname": "OS-EXT-SRV-ATTR:hostname",
-    "hypervisor_hostname": "OS-EXT-SRV-ATTR:hypervisor_hostname",
-    "instance_name": "OS-EXT-SRV-ATTR:instance_name",
-    "is_locked": "locked",
-    "kernel_id": "OS-EXT-SRV-ATTR:kernel_id",
-    "launch_index": "OS-EXT-SRV-ATTR:launch_index",
-    "launched_at": "OS-SRV-USG:launched_at",
-    "metadata": "properties",
-    "power_state": "OS-EXT-STS:power_state",
-    "ramdisk_id": "OS-EXT-SRV-ATTR:ramdisk_id",
-    "reservation_id": "OS-EXT-SRV-ATTR:reservation_id",
-    "root_device_name": "OS-EXT-SRV-ATTR:root_device_name",
-    "task_state": "OS-EXT-STS:task_state",
-    "terminated_at": "OS-SRV-USG:terminated_at",
-    "updated_at": "updated",
-    "user_data": "OS-EXT-SRV-ATTR:user_data",
-    "vm_state": "OS-EXT-STS:vm_state",
-}
 
-
-# The CLI prints the power state as a word rather than the number compute
-# returns. Index is the number; the gaps are states nova never reports.
+# The power state is a number on the wire and a word in the CLI. Index is
+# the number; the gaps are states nova never reports.
 POWER_STATES = (
     "NOSTATE",
     "Running",
@@ -222,14 +207,22 @@ def addresses_of(addresses):
 
 
 def server_details(connection, server):
-    """`openstack server show`: every field, renamed and sorted by name."""
+    """Every field of a server, under openstacksdk's own names.
+
+    The CLI renames these to what compute called them before printing, so
+    `created_at` reaches a terminal as `created` and `power_state` as
+    `OS-EXT-STS:power_state`. Those names are fossils of nova API
+    extensions that were folded into the API years ago, and carrying them
+    into a browser buys nothing, so the SDK's names stand here. The fields
+    themselves, and which are left out, still follow the CLI.
+    """
     shown = {}
     for key, value in server.to_dict().items():
         if key in SERVER_SHOW_SKIPS:
             continue
         if key in SERVER_SHOW_OPTIONAL and value is None:
             continue
-        shown[SERVER_SHOW_NAMES.get(key, key)] = value
+        shown[key] = value
 
     image = shown.get("image") or {}
     identifier = image.get("id") if isinstance(image, dict) else None
@@ -243,7 +236,7 @@ def server_details(connection, server):
         shown["image"] = NO_IMAGE
 
     shown["addresses"] = addresses_of(shown.get("addresses"))
-    if "OS-EXT-STS:power_state" in shown:
-        shown["OS-EXT-STS:power_state"] = power_state(shown["OS-EXT-STS:power_state"])
+    if "power_state" in shown:
+        shown["power_state"] = power_state(shown["power_state"])
 
-    return sorted(shown.items())
+    return sorted((key, readable(value)) for key, value in shown.items())

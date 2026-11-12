@@ -65,6 +65,22 @@ Logging in asks for an *unscoped* token, and that token is the whole of the
 session. Each request turns it back into a connection scoped to whatever
 project the page is about. Nothing is cached in the process.
 
+### Where the field names differ
+
+Which fields a page shows, and which it leaves out, follows the CLI. What
+they are *called* does not always. Before printing a server, the CLI renames
+openstacksdk's attributes to the names nova used when half of them lived in
+API extensions, so `created_at` reaches a terminal as `created` and
+`power_state` as `OS-EXT-STS:power_state`. Those prefixes are fossils and
+carrying them into a browser buys nothing, so Stratus keeps the SDK's names.
+
+Values that mean nothing raw are still worked out the way the CLI works them
+out: a power state is `Running` rather than `1`, addresses read
+`private=10.0.0.5, fd00::5`, and a server with no image says `N/A (booted
+from volume)` in those words, because people grep for them. Nested values
+render as `key=value` pairs with the empty ones left out, rather than as a
+Python dictionary.
+
 ## Settings
 
 Three layers, each overriding the one before:
