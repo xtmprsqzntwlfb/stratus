@@ -196,6 +196,13 @@ class TestServerShow:
         shown = self.details(cloud, flavor={"ram": 0, "original_name": "m1.nano"})
         assert shown["flavor"] == "original_name=m1.nano, ram=0"
 
+    def test_empty_entries_are_kept_as_the_cli_keeps_them(self, cloud):
+        """An empty field is worth telling apart from an absent one."""
+        shown = self.details(
+            cloud, flavor={"description": None, "disk": 0, "name": "m1.nano"}
+        )
+        assert shown["flavor"] == "description=, disk=0, name=m1.nano"
+
     def test_addresses_are_joined_as_on_the_list_page(self, cloud):
         shown = self.details(
             cloud, addresses={"private": [{"addr": "10.0.0.5"}]}

@@ -57,11 +57,12 @@ def readable(value):
     if value is None:
         return ""
     if isinstance(value, dict):
-        pairs = ((key, readable(item)) for key, item in sorted(value.items()))
-        # Keys with nothing behind them are noise: a flavor carries a dozen
-        # of them. Compared against "" rather than tested for truth, so that
-        # a disk of 0 or a public flag of False still counts as an answer.
-        return ", ".join(f"{key}={item}" for key, item in pairs if item != "")
+        # Every key is kept, including the ones with nothing behind them,
+        # because the CLI prints those too and a field that is empty is
+        # worth telling apart from a field that is absent.
+        return ", ".join(
+            f"{key}={readable(item)}" for key, item in sorted(value.items())
+        )
     if isinstance(value, (list, tuple, set, frozenset)):
         return ", ".join(str(readable(item)) for item in value)
     return value

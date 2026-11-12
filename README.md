@@ -78,8 +78,8 @@ Values that mean nothing raw are still worked out the way the CLI works them
 out: a power state is `Running` rather than `1`, addresses read
 `private=10.0.0.5, fd00::5`, and a server with no image says `N/A (booted
 from volume)` in those words, because people grep for them. Nested values
-render as `key=value` pairs with the empty ones left out, rather than as a
-Python dictionary.
+render as `key=value` pairs rather than as a Python dictionary, keeping the
+empty ones as the CLI keeps them.
 
 ## Settings
 
