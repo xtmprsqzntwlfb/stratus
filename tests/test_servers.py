@@ -203,6 +203,36 @@ class TestServerShow:
         )
         assert shown["flavor"] == "description=, disk=0, name=m1.nano"
 
+    def test_attached_volumes_drop_their_empty_keys(self, cloud):
+        """The one field where the CLI throws blanks away."""
+        shown = self.details(
+            cloud,
+            attached_volumes=[
+                {
+                    "id": "vol-1",
+                    "delete_on_termination": False,
+                    "attachment_id": None,
+                    "location": "dropped",
+                }
+            ],
+        )
+        assert shown["attached_volumes"] == "delete_on_termination=False, id=vol-1"
+
+    def test_other_fields_keep_their_empty_keys(self, cloud):
+        shown = self.details(cloud, flavor={"description": None, "id": "m1.nano"})
+        assert shown["flavor"] == "description=, id=m1.nano"
+
+    def test_unformatted_fields_print_as_the_cli_prints_them(self, cloud):
+        """The CLI runs only some fields through a formatting column.
+
+        An empty list shows as nothing in the tags row and as [] in the
+        server_groups row, because only the first of them is formatted.
+        """
+        shown = self.details(cloud, tags=[], server_groups=[], key_name=None)
+        assert shown["tags"] == ""
+        assert shown["server_groups"] == []
+        assert shown["key_name"] is None
+
     def test_addresses_are_joined_as_on_the_list_page(self, cloud):
         shown = self.details(
             cloud, addresses={"private": [{"addr": "10.0.0.5"}]}

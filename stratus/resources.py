@@ -47,7 +47,7 @@ def rows_of(resources, columns, link=None):
     ]
 
 
-def readable(value):
+def readable(value, prefix=""):
     """A value as a page should show it rather than as Python repr()s it.
 
     Nested dictionaries and lists are what the CLI runs through its own
@@ -59,18 +59,30 @@ def readable(value):
     if isinstance(value, dict):
         # Every key is kept, including the ones with nothing behind them,
         # because the CLI prints those too and a field that is empty is
-        # worth telling apart from a field that is absent.
-        return ", ".join(
-            f"{key}={readable(item)}" for key, item in sorted(value.items())
-        )
+        # worth telling apart from a field that is absent. A dictionary
+        # inside a dictionary flattens onto a dotted name, as the CLI
+        # flattens it, so that the one = in an entry is the real one.
+        parts = []
+        for key, item in sorted(value.items()):
+            name = f"{prefix}{key}"
+            if isinstance(item, dict) and item:
+                parts.append(readable(item, prefix=f"{name}."))
+            else:
+                parts.append(f"{name}={readable(item)}")
+        return ", ".join(parts)
     if isinstance(value, (list, tuple, set, frozenset)):
         return ", ".join(str(readable(item)) for item in value)
     return value
 
 
 def pairs_of(resource, columns):
-    """(label, value) for each field, for a show page."""
-    return [(column.label, readable(column.of(resource))) for column in columns]
+    """(label, value) for each field, for a show page.
+
+    Values go out as they are. `openstack project show` runs none of its
+    fields through a formatting column, so an empty options prints as {}
+    there and the page says the same.
+    """
+    return [(column.label, column.of(resource)) for column in columns]
 
 
 # `openstack project list`
@@ -154,6 +166,10 @@ def server_list(images):
 SERVER_SHOW_SKIPS = frozenset(
     {
         "block_device_mapping",
+        # The create-time parameter, not the answer: compute reports what a
+        # server actually has in has_config_drive. The CLI renames that one
+        # over the top of this one, which amounts to the same thing.
+        "config_drive",
         "flavor_id",
         "host",
         "image_id",
@@ -174,6 +190,22 @@ SERVER_SHOW_SKIPS = frozenset(
 
 # Keys worth printing only when the server has them.
 SERVER_SHOW_OPTIONAL = frozenset({"admin_password", "fault", "security_groups"})
+
+# Keys the CLI runs through a formatting column before printing. The rest it
+# prints as Python renders them, which is why an empty list shows as nothing
+# in the tags row and as [] in the server_groups row just below it. Matching
+# that means knowing which row is which.
+SERVER_SHOW_FORMATTED = frozenset(
+    {
+        "addresses",
+        "attached_volumes",
+        "flavor",
+        "metadata",
+        "scheduler_hints",
+        "security_groups",
+        "tags",
+    }
+)
 
 
 # The power state is a number on the wire and a word in the CLI. Index is
@@ -236,8 +268,25 @@ def server_details(connection, server):
     else:
         shown["image"] = NO_IMAGE
 
+    # Attached volumes are the one place the CLI throws empty keys away,
+    # and it drops the SDK's location with them. A volume otherwise arrives
+    # with half a dozen blanks that say nothing about the attachment.
+    volumes = shown.get("attached_volumes")
+    if volumes:
+        shown["attached_volumes"] = [
+            {
+                key: item
+                for key, item in volume.items()
+                if item is not None and key != "location"
+            }
+            for volume in volumes
+        ]
+
     shown["addresses"] = addresses_of(shown.get("addresses"))
     if "power_state" in shown:
         shown["power_state"] = power_state(shown["power_state"])
 
-    return sorted((key, readable(value)) for key, value in shown.items())
+    return sorted(
+        (key, readable(value) if key in SERVER_SHOW_FORMATTED else value)
+        for key, value in shown.items()
+    )
