@@ -101,9 +101,11 @@ Nothing is read from `OS_*` variables or `clouds.yaml`.
 ## Status
 
 Early. Stratus can log in, list the projects an account can reach, and list
-and show the servers in one, matching `openstack project list
---my-projects`, `openstack project show`, `openstack server list` and
-`openstack server show`. Other resources come next.
+and show the servers, images and networks in one of them.
+
+Each kind of resource is a declaration in `stratus/resources.py` saying what
+the CLI prints for it and how to fetch it, and one pair of routes renders
+them all. Adding volumes or flavors means adding a declaration, not a page.
 
 A project is named in the path, as in `/projects/<id>`, rather than being a
 current project held in the session. That follows the CLI, where scope is an

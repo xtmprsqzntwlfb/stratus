@@ -1,0 +1,8 @@
+{% if crumbs %}
+<p class="crumbs">
+  {% for label, url in crumbs %}
+  {%- if not loop.first %} / {% endif -%}
+  <a href="{{ url }}">{{ label }}</a>
+  {%- endfor %}
+</p>
+{% endif %}

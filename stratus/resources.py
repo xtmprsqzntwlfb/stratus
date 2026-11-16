@@ -239,23 +239,51 @@ def addresses_of(addresses):
     )
 
 
-def server_details(connection, server):
-    """Every field of a server, under openstacksdk's own names.
+# Bookkeeping openstacksdk hangs on every resource, which no API returns.
+SDK_BOOKKEEPING = frozenset({"location"})
 
-    The CLI renames these to what compute called them before printing, so
-    `created_at` reaches a terminal as `created` and `power_state` as
-    `OS-EXT-STS:power_state`. Those names are fossils of nova API
-    extensions that were folded into the API years ago, and carrying them
-    into a browser buys nothing, so the SDK's names stand here. The fields
-    themselves, and which are left out, still follow the CLI.
+
+def fields_of(item, skips=frozenset(), optional=frozenset(), ignore_none=False):
+    """A resource as a dict, under openstacksdk's own names.
+
+    The CLI renames these to what each service called them before printing,
+    so a server's `created_at` reaches a terminal as `created` and its
+    `power_state` as `OS-EXT-STS:power_state`. Those names are fossils of
+    API extensions folded into the APIs years ago, and carrying them into a
+    browser buys nothing, so the SDK's names stand. Which fields appear
+    still follows the CLI.
+
+    ``ignore_none`` drops attributes the service did not send. Glance needs
+    it, because the SDK's image class declares every property an image
+    could ever carry and a real one sets a quarter of them. Compute and
+    neutron do not, because the nulls they send are answers.
     """
     shown = {}
-    for key, value in server.to_dict().items():
-        if key in SERVER_SHOW_SKIPS:
+    for key, value in item.to_dict(ignore_none=ignore_none).items():
+        if key in SDK_BOOKKEEPING or key in skips:
             continue
-        if key in SERVER_SHOW_OPTIONAL and value is None:
+        if key in optional and value is None:
             continue
         shown[key] = value
+    return shown
+
+
+def rendered(shown, formatted=frozenset()):
+    """Sorted (label, value) pairs, formatting only what needs it.
+
+    Everything else goes out as it is, so a None prints as None and an
+    empty list as [], which is what the CLI prints for a field it does not
+    run through a formatting column of its own.
+    """
+    return sorted(
+        (key, readable(value) if key in formatted else value)
+        for key, value in shown.items()
+    )
+
+
+def server_details(connection, server):
+    """`openstack server show`."""
+    shown = fields_of(server, skips=SERVER_SHOW_SKIPS, optional=SERVER_SHOW_OPTIONAL)
 
     image = shown.get("image") or {}
     identifier = image.get("id") if isinstance(image, dict) else None
@@ -286,7 +314,96 @@ def server_details(connection, server):
     if "power_state" in shown:
         shown["power_state"] = power_state(shown["power_state"])
 
-    return sorted(
-        (key, readable(value) if key in SERVER_SHOW_FORMATTED else value)
+    return rendered(shown, SERVER_SHOW_FORMATTED)
+
+
+def image_details(connection, image):
+    """`openstack image show`."""
+    shown = fields_of(image, ignore_none=True)
+    return rendered(shown, containers_in(shown))
+
+
+def network_details(connection, network):
+    """`openstack network show`."""
+    # tenant_id is project_id under the name neutron used to use, and
+    # if_match is a request header the SDK keeps on the resource.
+    shown = fields_of(network, skips={"if_match", "tenant_id"})
+    return rendered(shown, containers_in(shown))
+
+
+def containers_in(shown):
+    """The keys holding a list or a dict, which are the ones worth joining."""
+    return {
+        key
         for key, value in shown.items()
+        if isinstance(value, (dict, list, tuple, set, frozenset))
+    }
+
+
+class Resource(typing.NamedTuple):
+    """One kind of thing a project holds, and the two pages showing it."""
+
+    slug: str  # the URL segment, and the plural the CLI uses
+    heading: str
+    index: typing.Any  # connection -> the items
+    fetch: typing.Any  # connection, id -> one item
+    columns: typing.Any  # the list columns, or connection, items -> them
+    details: typing.Any  # connection, item -> (label, value) pairs
+    empty: str
+    # Set where the CLI sorts a listing itself rather than printing it in
+    # the order the service sent. Most do not; `image list` defaults to
+    # --sort name:asc and reorders what glance returned.
+    sort: typing.Any = None
+
+    def columns_for(self, connection, items):
+        if callable(self.columns):
+            return self.columns(connection, items)
+        return self.columns
+
+    def ordered(self, items):
+        return sorted(items, key=self.sort) if self.sort else items
+
+
+CATALOGUE = {
+    resource.slug: resource
+    for resource in (
+        Resource(
+            slug="servers",
+            heading="Servers",
+            index=lambda connection: connection.compute.servers(),
+            fetch=lambda connection, name: connection.compute.get_server(name),
+            columns=lambda connection, items: server_list(
+                image_names(connection, items)
+            ),
+            details=server_details,
+            empty="No servers in this project.",
+        ),
+        Resource(
+            slug="images",
+            heading="Images",
+            index=lambda connection: connection.image.images(),
+            fetch=lambda connection, name: connection.image.get_image(name),
+            columns=(
+                Column("ID", "id"),
+                Column("Name", "name"),
+                Column("Status", "status"),
+            ),
+            details=image_details,
+            empty="No images this project can see.",
+            sort=lambda image: str(image.name),
+        ),
+        Resource(
+            slug="networks",
+            heading="Networks",
+            index=lambda connection: connection.network.networks(),
+            fetch=lambda connection, name: connection.network.get_network(name),
+            columns=(
+                Column("ID", "id"),
+                Column("Name", "name"),
+                Column("Subnets", lambda net: ", ".join(net.subnet_ids or ())),
+            ),
+            details=network_details,
+            empty="No networks this project can see.",
+        ),
     )
+}

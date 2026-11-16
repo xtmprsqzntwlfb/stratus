@@ -150,46 +150,76 @@ def project(project_id):
     with scoped(project_id) as connection:
         found = connection.identity.get_project(project_id)
         return flask.render_template(
-            "project.html",
-            project=found,
+            "detail.html",
+            heading=found.name,
+            crumbs=[("Projects", flask.url_for("ui.projects"))],
+            holds=[
+                (resource.heading, flask.url_for("ui.collection", project_id=project_id, kind=slug))
+                for slug, resource in resources.CATALOGUE.items()
+            ],
             fields=resources.pairs_of(found, resources.PROJECT_SHOW),
         )
 
 
-@bp.route("/projects/<project_id>/servers")
+def _kind(slug):
+    resource = resources.CATALOGUE.get(slug)
+    if resource is None:
+        flask.abort(404)
+    return resource
+
+
+def _crumbs(project_id, resource=None):
+    trail = [
+        ("Projects", flask.url_for("ui.projects")),
+        ("project", flask.url_for("ui.project", project_id=project_id)),
+    ]
+    if resource is not None:
+        trail.append(
+            (
+                resource.heading,
+                flask.url_for("ui.collection", project_id=project_id, kind=resource.slug),
+            )
+        )
+    return trail
+
+
+@bp.route("/projects/<project_id>/<kind>")
 @auth.login_required
-def servers(project_id):
-    """`openstack server list`."""
+def collection(project_id, kind):
+    """`openstack <kind> list`, for whichever kind the registry knows."""
+    resource = _kind(kind)
     with scoped(project_id) as connection:
-        found = list(connection.compute.servers())
-        columns = resources.server_list(resources.image_names(connection, found))
+        found = resource.ordered(list(resource.index(connection)))
+        columns = resource.columns_for(connection, found)
         rows = resources.rows_of(
             found,
             columns,
-            link=lambda server: flask.url_for(
-                "ui.server", project_id=project_id, server_id=server.id
+            link=lambda item: flask.url_for(
+                "ui.item", project_id=project_id, kind=kind, item_id=item.id
             ),
         )
         return flask.render_template(
-            "servers.html",
-            project_id=project_id,
+            "collection.html",
+            heading=resource.heading,
+            crumbs=_crumbs(project_id),
             columns=columns,
             rows=rows,
-            empty="No servers in this project.",
+            empty=resource.empty,
         )
 
 
-@bp.route("/projects/<project_id>/servers/<server_id>")
+@bp.route("/projects/<project_id>/<kind>/<item_id>")
 @auth.login_required
-def server(project_id, server_id):
-    """`openstack server show`."""
+def item(project_id, kind, item_id):
+    """`openstack <kind> show`."""
+    resource = _kind(kind)
     with scoped(project_id) as connection:
-        found = connection.compute.get_server(server_id)
+        found = resource.fetch(connection, item_id)
         return flask.render_template(
-            "server.html",
-            project_id=project_id,
-            server=found,
-            fields=resources.server_details(connection, found),
+            "detail.html",
+            heading=found.name or found.id,
+            crumbs=_crumbs(project_id, resource),
+            fields=resource.details(connection, found),
         )
 
 
