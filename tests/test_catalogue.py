@@ -53,7 +53,7 @@ def headers(page):
 
 
 def test_an_unknown_kind_is_not_found(client, cloud):
-    assert client.get(f"/projects/{PROJECT}/volumes").status_code == 404
+    assert client.get(f"/projects/{PROJECT}/hovercraft").status_code == 404
 
 
 def test_every_kind_in_the_registry_has_a_page(client, cloud):
@@ -125,3 +125,125 @@ class TestNetworks:
         assert shown["project_id"] == "kept"
         for gone in ("if_match", "tenant_id", "location"):
             assert gone not in shown
+
+
+def a_flavor(name, **extra):
+    fields = {
+        "id": f"id-{name}",
+        "name": name,
+        "ram": 128,
+        "disk": 1,
+        "ephemeral": 0,
+        "vcpus": 1,
+        "is_public": True,
+    }
+    fields.update(extra)
+    return types.SimpleNamespace(**fields)
+
+
+def a_volume(name, attachments=(), **extra):
+    fields = {
+        "id": f"id-{name}",
+        "name": name,
+        "status": "available",
+        "size": 1,
+        "attachments": list(attachments),
+    }
+    fields.update(extra)
+    return types.SimpleNamespace(**fields)
+
+
+class TestFlavors:
+    def test_the_columns_are_the_ones_the_cli_prints(self, client, cloud):
+        cloud.compute.flavors.return_value = [a_flavor("m1.nano")]
+        page = client.get(f"/projects/{PROJECT}/flavors").get_data(as_text=True)
+        assert headers(page) == [
+            "ID",
+            "Name",
+            "RAM",
+            "Disk",
+            "Ephemeral",
+            "VCPUs",
+            "Is Public",
+        ]
+
+    def test_only_public_flavors_are_asked_for(self, client, cloud):
+        """What the CLI asks for unless told --all or --private."""
+        cloud.compute.flavors.return_value = [a_flavor("m1.nano")]
+        client.get(f"/projects/{PROJECT}/flavors")
+        cloud.compute.flavors.assert_called_once_with(is_public=True)
+
+    def test_the_sdk_copy_of_the_name_is_left_out(self, cloud):
+        flavor = mock.MagicMock(is_public=True)
+        flavor.to_dict.return_value = {
+            "id": "m1.nano",
+            "name": "m1.nano",
+            "original_name": "m1.nano",
+            "extra_specs": {"hw_rng:allowed": True},
+        }
+        shown = dict(resources.flavor_details(cloud, flavor))
+        assert "original_name" not in shown
+        assert shown["extra_specs"] == "hw_rng:allowed=True"
+
+    def test_a_public_flavor_is_not_asked_who_may_use_it(self, cloud):
+        flavor = mock.MagicMock(is_public=True)
+        flavor.to_dict.return_value = {"id": "m1.nano"}
+        shown = dict(resources.flavor_details(cloud, flavor))
+        assert shown["access_project_ids"] is None
+        cloud.compute.get_flavor_access.assert_not_called()
+
+    def test_a_private_flavor_lists_the_projects_allowed_it(self, cloud):
+        flavor = mock.MagicMock(is_public=False, id="secret")
+        flavor.to_dict.return_value = {"id": "secret"}
+        cloud.compute.get_flavor_access.return_value = [
+            {"tenant_id": "p-1"},
+            {"tenant_id": "p-2"},
+        ]
+        shown = dict(resources.flavor_details(cloud, flavor))
+        assert shown["access_project_ids"] == "p-1, p-2"
+        cloud.compute.get_flavor_access.assert_called_once_with("secret")
+
+
+class TestVolumes:
+    def test_the_columns_are_the_ones_the_cli_prints(self, client, cloud):
+        cloud.block_storage.volumes.return_value = [a_volume("spare")]
+        page = client.get(f"/projects/{PROJECT}/volumes").get_data(as_text=True)
+        assert headers(page) == ["ID", "Name", "Status", "Size", "Attached to"]
+
+    def test_an_attachment_names_the_server_it_is_on(self, client, cloud):
+        cloud.block_storage.volumes.return_value = [
+            a_volume("root", [{"server_id": "s-1", "device": "/dev/vda"}])
+        ]
+        cloud.compute.servers.return_value = [
+            types.SimpleNamespace(id="s-1", name="plum")
+        ]
+        page = client.get(f"/projects/{PROJECT}/volumes").get_data(as_text=True)
+        assert "Attached to plum on /dev/vda" in page
+
+    def test_an_unknown_server_falls_back_to_its_id(self, client, cloud):
+        cloud.block_storage.volumes.return_value = [
+            a_volume("root", [{"server_id": "s-9", "device": "/dev/vda"}])
+        ]
+        cloud.compute.servers.return_value = []
+        page = client.get(f"/projects/{PROJECT}/volumes").get_data(as_text=True)
+        assert "Attached to s-9 on /dev/vda" in page
+
+    def test_servers_are_not_listed_when_nothing_is_attached(self, client, cloud):
+        cloud.block_storage.volumes.return_value = [a_volume("spare")]
+        client.get(f"/projects/{PROJECT}/volumes")
+        cloud.compute.servers.assert_not_called()
+
+    def test_create_only_and_dead_fields_are_left_out(self, cloud):
+        volume = mock.MagicMock()
+        volume.to_dict.return_value = {
+            "id": "v", "name": "root", "size": 1,
+            "scheduler_hints": "dropped", "image_id": "dropped",
+            "replication_driver_data": "dropped",
+            "extended_replication_status": "dropped",
+            "encryption_key_id": None,
+        }
+        shown = dict(resources.volume_details(cloud, volume))
+        for gone in ("scheduler_hints", "image_id", "replication_driver_data",
+                     "extended_replication_status", "encryption_key_id"):
+            assert gone not in shown
+        assert shown["size"] == 1

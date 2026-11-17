@@ -331,6 +331,93 @@ def network_details(connection, network):
     return rendered(shown, containers_in(shown))
 
 
+def flavor_details(connection, flavor):
+    """`openstack flavor show`."""
+    # original_name is the SDK's copy of name, kept for servers that embed
+    # a flavor. The CLI hides it and so does this.
+    shown = fields_of(flavor, skips={"original_name"})
+    shown["access_project_ids"] = flavor_access(connection, flavor)
+    return rendered(shown, containers_in(shown))
+
+
+def flavor_access(connection, flavor):
+    """Which projects may use a private flavor, or None for a public one.
+
+    Not an attribute of the flavor: nova answers it separately, and the
+    CLI only asks when the flavor is private, a public one being open to
+    everybody. A refusal leaves the field empty rather than the page.
+    """
+    if flavor.is_public:
+        return None
+    try:
+        granted = connection.compute.get_flavor_access(flavor.id)
+    except openstack.exceptions.SDKException:
+        return None
+    return [
+        access.get("tenant_id") if isinstance(access, dict) else access.tenant_id
+        for access in granted
+    ]
+
+
+# Columns cinder no longer fills in, and ones that only mean anything on
+# the way in. The CLI drops the same set, under the API's names for them.
+VOLUME_SHOW_SKIPS = frozenset(
+    {
+        "extended_replication_status",
+        "image_id",
+        "replication_driver_data",
+        "scheduler_hints",
+    }
+)
+VOLUME_SHOW_OPTIONAL = frozenset(
+    {"consistency_group_id", "encryption_key_id", "volume_image_metadata"}
+)
+
+
+def volume_details(connection, volume):
+    """`openstack volume show`."""
+    shown = fields_of(volume, skips=VOLUME_SHOW_SKIPS, optional=VOLUME_SHOW_OPTIONAL)
+    return rendered(shown, containers_in(shown))
+
+
+def server_names(connection, volumes):
+    """Names for the servers these volumes are attached to.
+
+    `volume list` prints a server's name where it has one and its id where
+    it does not, and gets the names by listing the project's servers once.
+    Skipped entirely when nothing is attached, and forgiven when compute
+    will not answer, since an id in the column still says which server.
+    """
+    if not any(volume.attachments for volume in volumes):
+        return {}
+    try:
+        return {server.id: server.name for server in connection.compute.servers()}
+    except openstack.exceptions.SDKException:
+        return {}
+
+
+def attached_to(volume, names):
+    """The Attached to column, spaced as the CLI spaces it."""
+    return "".join(
+        "Attached to {} on {} ".format(
+            names.get(attachment["server_id"], attachment["server_id"]),
+            attachment["device"],
+        )
+        for attachment in volume.attachments or ()
+    )
+
+
+def volume_list(names):
+    """`openstack volume list`, given the server names it needs to print."""
+    return (
+        Column("ID", "id"),
+        Column("Name", "name"),
+        Column("Status", "status"),
+        Column("Size", "size"),
+        Column("Attached to", lambda volume: attached_to(volume, names)),
+    )
+
+
 def containers_in(shown):
     """The keys holding a list or a dict, which are the ones worth joining."""
     return {
@@ -404,6 +491,36 @@ CATALOGUE = {
             ),
             details=network_details,
             empty="No networks this project can see.",
+        ),
+        Resource(
+            slug="flavors",
+            heading="Flavors",
+            # is_public=True is what the CLI asks for unless told --all or
+            # --private, and it is what nova assumes anyway.
+            index=lambda connection: connection.compute.flavors(is_public=True),
+            fetch=lambda connection, name: connection.compute.get_flavor(name),
+            columns=(
+                Column("ID", "id"),
+                Column("Name", "name"),
+                Column("RAM", "ram"),
+                Column("Disk", "disk"),
+                Column("Ephemeral", "ephemeral"),
+                Column("VCPUs", "vcpus"),
+                Column("Is Public", "is_public"),
+            ),
+            details=flavor_details,
+            empty="No flavors this project can use.",
+        ),
+        Resource(
+            slug="volumes",
+            heading="Volumes",
+            index=lambda connection: connection.block_storage.volumes(),
+            fetch=lambda connection, name: connection.block_storage.get_volume(name),
+            columns=lambda connection, items: volume_list(
+                server_names(connection, items)
+            ),
+            details=volume_details,
+            empty="No volumes in this project.",
         ),
     )
 }

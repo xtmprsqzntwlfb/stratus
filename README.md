@@ -101,7 +101,7 @@ Nothing is read from `OS_*` variables or `clouds.yaml`.
 ## Status
 
 Early. Stratus can log in, list the projects an account can reach, and list
-and show the servers, images and networks in one of them.
+and show the servers, images, networks, flavors and volumes in one of them.
 
 Each kind of resource is a declaration in `stratus/resources.py` saying what
 the CLI prints for it and how to fetch it, and one pair of routes renders
