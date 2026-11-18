@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Service unavailable &mdash; Stratus{% endblock %}
+
+{% block content %}
+<h1>The {{ subject }} service is not answering</h1>
+<p class="note">
+  Nothing is wrong with what you asked for. That one service is either
+  missing from the catalogue or not responding, so this page cannot be
+  drawn. The rest of the cloud is unaffected, so the other pages are worth
+  a try.
+</p>
+<p><a href="{{ url_for('ui.projects') }}">Back to the projects</a></p>
+{% endblock %}

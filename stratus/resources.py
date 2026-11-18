@@ -437,6 +437,9 @@ class Resource(typing.NamedTuple):
     columns: typing.Any  # the list columns, or connection, items -> them
     details: typing.Any  # connection, item -> (label, value) pairs
     empty: str
+    # The OpenStack service behind it, for naming the one that is not
+    # answering on a page that cannot be drawn.
+    service: str = "cloud"
     # Set where the CLI sorts a listing itself rather than printing it in
     # the order the service sent. Most do not; `image list` defaults to
     # --sort name:asc and reorders what glance returned.
@@ -456,6 +459,7 @@ CATALOGUE = {
     for resource in (
         Resource(
             slug="servers",
+            service="compute",
             heading="Servers",
             index=lambda connection: connection.compute.servers(),
             fetch=lambda connection, name: connection.compute.get_server(name),
@@ -467,6 +471,7 @@ CATALOGUE = {
         ),
         Resource(
             slug="images",
+            service="image",
             heading="Images",
             index=lambda connection: connection.image.images(),
             fetch=lambda connection, name: connection.image.get_image(name),
@@ -481,6 +486,7 @@ CATALOGUE = {
         ),
         Resource(
             slug="networks",
+            service="network",
             heading="Networks",
             index=lambda connection: connection.network.networks(),
             fetch=lambda connection, name: connection.network.get_network(name),
@@ -494,6 +500,7 @@ CATALOGUE = {
         ),
         Resource(
             slug="flavors",
+            service="compute",
             heading="Flavors",
             # is_public=True is what the CLI asks for unless told --all or
             # --private, and it is what nova assumes anyway.
@@ -513,6 +520,7 @@ CATALOGUE = {
         ),
         Resource(
             slug="volumes",
+            service="block storage",
             heading="Volumes",
             index=lambda connection: connection.block_storage.volumes(),
             fetch=lambda connection, name: connection.block_storage.get_volume(name),

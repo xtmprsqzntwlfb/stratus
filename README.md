@@ -81,6 +81,26 @@ from volume)` in those words, because people grep for them. Nested values
 render as `key=value` pairs rather than as a Python dictionary, keeping the
 empty ones as the CLI keeps them.
 
+## When the cloud misbehaves
+
+Clouds fail in ways that are nobody's bug, and `stratus/errors.py` is the one
+place that decides what each failure looks like:
+
+| What happened | What you get |
+| --- | --- |
+| The token aged out | Logged out, back to the login form |
+| Denied, or not there | A plain 404, saying no more than that |
+| A service is missing or silent | 503 naming that service, rest of the site standing |
+| Anything else | 500, and a request id to find the traceback by |
+
+A refusal and an absence answer alike on purpose, so that nobody can map what
+exists by reading which of the two comes back.
+
+One service falling over takes down only the pages that need it. The side
+lookups are forgiving too: a server list still draws when glance cannot be
+reached, showing image ids in place of names, and a volume list still draws
+when nova cannot be reached, showing server ids in place of names.
+
 ## Settings
 
 Three layers, each overriding the one before:

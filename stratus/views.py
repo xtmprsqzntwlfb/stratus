@@ -1,13 +1,10 @@
 """Routes. One blueprint, because there is only ever going to be one."""
 
-import contextlib
 import typing
 
 import flask
-import keystoneauth1.exceptions
-import openstack.exceptions
 
-from . import auth, resources
+from . import auth, errors, resources
 
 bp = flask.Blueprint("ui", __name__)
 
@@ -65,48 +62,6 @@ def _onward(destination):
     return flask.url_for("ui.index")
 
 
-@bp.app_errorhandler(keystoneauth1.exceptions.Unauthorized)
-def token_no_longer_works(refusal):
-    """Tokens expire, and when one does the session holding it is worthless."""
-    auth.log_out()
-    flask.flash("That session has expired. Log in again.", "error")
-    return flask.redirect(flask.url_for("ui.login"))
-
-
-@bp.app_errorhandler(404)
-def not_found(error):
-    return flask.render_template("not_found.html"), 404
-
-
-@bp.app_errorhandler(openstack.exceptions.NotFoundException)
-def resource_is_gone(missing):
-    """A 404 from the cloud is a 404 here.
-
-    Returned rather than raised through abort(), because an abort inside an
-    error handler is not dispatched to another one.
-    """
-    return not_found(missing)
-
-
-@contextlib.contextmanager
-def scoped(project_id):
-    """A connection into one project, and the two meanings of its refusal.
-
-    Keystone answers 401 both to a token that has expired and to a request
-    to scope a good token into a project it may not enter. Asking the
-    unscoped token its own user id is what tells those apart.
-    """
-    try:
-        yield auth.connection(project_id)
-    except keystoneauth1.exceptions.Unauthorized:
-        if not auth.token_still_works():
-            raise  # the session is over, and the handler above says so
-        # The token is fine, so it is the project that is not: either no
-        # such project, or not one this account may enter. Keystone will not
-        # say which, and neither should this.
-        flask.abort(404)
-
-
 @bp.route("/")
 @auth.login_required
 def index():
@@ -123,6 +78,7 @@ def projects():
     reach are the ones their own token can be scoped to, which is the same
     set the CLI reaches for with --my-projects.
     """
+    errors.about("identity")
     connection = auth.connection()
     mine = connection.identity.user_projects(connection.session.get_user_id())
     rows = resources.rows_of(
@@ -147,7 +103,8 @@ def project(project_id):
     one, so that a page says which project it is about the way a CLI
     invocation does, and two of them can be open at once.
     """
-    with scoped(project_id) as connection:
+    errors.about("identity")
+    with errors.scoped(project_id) as connection:
         found = connection.identity.get_project(project_id)
         return flask.render_template(
             "detail.html",
@@ -188,7 +145,9 @@ def _crumbs(project_id, resource=None):
 def collection(project_id, kind):
     """`openstack <kind> list`, for whichever kind the registry knows."""
     resource = _kind(kind)
-    with scoped(project_id) as connection:
+    with errors.scoped(project_id) as connection:
+        # Scoping is behind us, so the service in question is now its own.
+        errors.about(resource.service)
         found = resource.ordered(list(resource.index(connection)))
         columns = resource.columns_for(connection, found)
         rows = resources.rows_of(
@@ -213,7 +172,9 @@ def collection(project_id, kind):
 def item(project_id, kind, item_id):
     """`openstack <kind> show`."""
     resource = _kind(kind)
-    with scoped(project_id) as connection:
+    with errors.scoped(project_id) as connection:
+        # Scoping is behind us, so the service in question is now its own.
+        errors.about(resource.service)
         found = resource.fetch(connection, item_id)
         return flask.render_template(
             "detail.html",

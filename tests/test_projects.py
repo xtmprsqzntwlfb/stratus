@@ -109,8 +109,8 @@ def test_the_cli_name_for_a_field_wins_over_the_sdk_name(client, cloud):
 
 
 def test_an_unreachable_project_is_not_found(client, cloud):
-    """Keystone says 401, but the token is good, so the project is at fault."""
-    cloud.identity.get_project.side_effect = keystoneauth1.exceptions.Unauthorized()
+    """Rescoping is refused, but the token is good, so the project is at fault."""
+    cloud.session.get_token.side_effect = keystoneauth1.exceptions.Unauthorized()
     response = client.get("/projects/deadbeef")
     assert response.status_code == 404
     with client.session_transaction() as session:
@@ -119,7 +119,7 @@ def test_an_unreachable_project_is_not_found(client, cloud):
 
 def test_an_expired_token_ends_the_session(client, cloud):
     """The same 401, but now the token itself no longer works."""
-    cloud.identity.get_project.side_effect = keystoneauth1.exceptions.Unauthorized()
+    cloud.session.get_token.side_effect = keystoneauth1.exceptions.Unauthorized()
     cloud.session.get_user_id.side_effect = keystoneauth1.exceptions.Unauthorized()
     response = client.get("/projects/deadbeef")
     assert response.headers["Location"] == "/login"

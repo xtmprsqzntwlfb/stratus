@@ -126,3 +126,11 @@ td:first-child { font-family: ui-monospace, monospace; font-size: 0.9em; }
 .empty { color: var(--dim); font-family: inherit; }
 
 dd { font-family: ui-monospace, monospace; font-size: 0.9em; }
+
+.ticket {
+  font-family: ui-monospace, monospace;
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  background: var(--accent);
+}
