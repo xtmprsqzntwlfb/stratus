@@ -93,6 +93,10 @@ place that decides what each failure looks like:
 | A service is missing or silent | 503 naming that service, rest of the site standing |
 | Anything else | 500, and a request id to find the traceback by |
 
+The last row is what a deployment does. Under `flask run --debug` the failure
+is logged under its id and then re-raised, so the interactive debugger gets
+the one thing you started that server to see.
+
 A refusal and an absence answer alike on purpose, so that nobody can map what
 exists by reading which of the two comes back.
 

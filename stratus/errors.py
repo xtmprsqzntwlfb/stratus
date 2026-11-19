@@ -117,10 +117,25 @@ def unavailable(failure):
 
 
 def unexpected(failure):
+    """A bug rather than weather. Log it, then either show it or hide it."""
     # exception(), not error(), so the traceback reaches the log under the
     # same id the page is showing. That pairing is the whole point of it.
     log.exception("unhandled failure [%s]", request_id())
+    if _wants_raw_exceptions():
+        # Under `flask run --debug` the interactive debugger is worth more
+        # than a tidy apology, and this handler would otherwise swallow
+        # the one thing the developer started the server to see.
+        raise failure
     return flask.render_template("failure.html", request_id=request_id()), 500
+
+
+def _wants_raw_exceptions():
+    """Flask's own rule for whether a failure should go up rather than out."""
+    app = flask.current_app
+    propagate = app.config.get("PROPAGATE_EXCEPTIONS")
+    if propagate is None:
+        return app.debug or app.testing
+    return propagate
 
 
 def _tag():

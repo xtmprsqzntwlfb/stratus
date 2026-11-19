@@ -135,9 +135,25 @@ class TestServiceUnwell:
 
 
 class TestUnexpected:
+    @pytest.fixture(autouse=True)
+    def deployed(self, app):
+        """As a deployment runs: a bug becomes a page, not a traceback.
+
+        Under `flask run --debug`, and in these tests by default, the same
+        bug is re-raised instead so the debugger can have it.
+        """
+        app.config["PROPAGATE_EXCEPTIONS"] = False
+
     def test_an_ordinary_bug_is_a_500(self, client, cloud):
         failing(cloud, TypeError("a real bug"))
         assert client.get(SERVERS).status_code == 500
+
+    def test_a_bug_is_raised_for_the_debugger_when_asked(self, app, client, cloud):
+        """What `flask run --debug` needs: the exception, not an apology."""
+        app.config["PROPAGATE_EXCEPTIONS"] = True
+        failing(cloud, TypeError("a real bug"))
+        with pytest.raises(TypeError, match="a real bug"):
+            client.get(SERVERS)
 
     def test_the_page_carries_an_id_that_reaches_the_log(self, client, cloud, caplog):
         failing(cloud, TypeError("a real bug"))
