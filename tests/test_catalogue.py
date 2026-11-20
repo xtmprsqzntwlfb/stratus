@@ -3,6 +3,7 @@
 import types
 import unittest.mock as mock
 
+import openstack.exceptions
 import pytest
 
 from stratus import auth, resources
@@ -247,3 +248,73 @@ class TestVolumes:
                      "extended_replication_status", "encryption_key_id"):
             assert gone not in shown
         assert shown["size"] == 1
+
+
+def a_project():
+    return types.SimpleNamespace(
+        id=PROJECT, name="admin", description="", domain_id="default",
+        is_enabled=True, is_domain=False, options={}, parent_id="default", tags=[],
+    )
+
+
+def catalogue(cloud, *types_):
+    """Tell the token's catalogue which services this cloud runs."""
+    cloud.identity.get_project.return_value = a_project()
+    access = cloud.session.auth.get_access.return_value
+    access.service_catalog.catalog = [{"type": t} for t in types_]
+
+
+class TestWhatTheCloudRuns:
+    EVERYTHING = ("identity", "compute", "image", "network", "block-storage")
+
+    def page(self, client, cloud, *services):
+        catalogue(cloud, *services)
+        return client.get(f"/projects/{PROJECT}").get_data(as_text=True)
+
+    def test_a_full_cloud_offers_every_kind(self, client, cloud):
+        page = self.page(client, cloud, *self.EVERYTHING)
+        for slug in resources.CATALOGUE:
+            assert f'href="/projects/{PROJECT}/{slug}"' in page
+
+    def test_a_service_the_cloud_lacks_is_not_linked(self, client, cloud):
+        page = self.page(client, cloud, "identity", "compute", "image", "network")
+        assert f'href="/projects/{PROJECT}/volumes"' not in page
+
+    def test_and_it_says_why_rather_than_vanishing(self, client, cloud):
+        page = self.page(client, cloud, "identity", "compute", "image", "network")
+        assert "no block storage service on this cloud" in page
+
+    def test_one_absent_service_leaves_the_others_linked(self, client, cloud):
+        """The point of it: no neutron must not cost you servers."""
+        page = self.page(client, cloud, "identity", "compute", "image", "block-storage")
+        assert f'href="/projects/{PROJECT}/networks"' not in page
+        for still_there in ("servers", "images", "volumes", "flavors"):
+            assert f'href="/projects/{PROJECT}/{still_there}"' in page
+
+    def test_an_old_cloud_naming_cinder_volumev3_still_counts(self, client, cloud):
+        page = self.page(client, cloud, "identity", "compute", "volumev3")
+        assert f'href="/projects/{PROJECT}/volumes"' in page
+
+    def test_an_empty_catalogue_offers_everything(self, client, cloud):
+        """Unanswerable, so offer the lot rather than withhold in silence."""
+        page = self.page(client, cloud)
+        for slug in resources.CATALOGUE:
+            assert f'href="/projects/{PROJECT}/{slug}"' in page
+
+    def test_deciding_costs_no_requests(self, client, cloud):
+        self.page(client, cloud, *self.EVERYTHING)
+        cloud.has_service.assert_not_called()
+        cloud.compute.servers.assert_not_called()
+        cloud.block_storage.volumes.assert_not_called()
+
+    def test_a_listed_service_is_still_reachable_when_it_is_unwell(
+        self, client, cloud
+    ):
+        """Listed but silent is the 503's job, not the project page's."""
+        catalogue(cloud, *self.EVERYTHING)
+        cloud.block_storage.volumes.side_effect = (
+            openstack.exceptions.EndpointNotFound("silent")
+        )
+        page = client.get(f"/projects/{PROJECT}").get_data(as_text=True)
+        assert f'href="/projects/{PROJECT}/volumes"' in page
+        assert client.get(f"/projects/{PROJECT}/volumes").status_code == 503

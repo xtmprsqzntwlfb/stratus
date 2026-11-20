@@ -8,6 +8,7 @@ name for a field and openstacksdk's attribute name differ, both are here.
 import typing
 
 import openstack.exceptions
+import os_service_types
 
 # What `openstack server list` puts in the Image column for a server booted
 # straight from a volume, which therefore has no image. Worth spelling the
@@ -427,6 +428,31 @@ def containers_in(shown):
     }
 
 
+# Clouds name the same service differently depending on their age, so
+# volumev3 and block-storage have to come out as one thing before anything
+# can be looked up by name. openstacksdk carries this table already.
+SERVICE_TYPES = os_service_types.ServiceTypes()
+
+
+def catalogue_of(connection):
+    """The service types this token was told about, or None if unknown.
+
+    Read off the token rather than asked for. The catalogue arrived with
+    the scoped token, so this costs nothing, where asking each service
+    whether it is there would cost a request per service on every project
+    page. It answers "is this service on this cloud", not "is it well":
+    one that is listed and silent still gets its own 503.
+    """
+    catalogue = connection.session.auth.get_access(connection.session).service_catalog
+    offered = {
+        SERVICE_TYPES.get_service_type(entry["type"]) or entry["type"]
+        for entry in catalogue.catalog
+    }
+    # An empty catalogue means the token never carried one, not that the
+    # cloud runs nothing, so say that the question went unanswered.
+    return offered or None
+
+
 class Resource(typing.NamedTuple):
     """One kind of thing a project holds, and the two pages showing it."""
 
@@ -437,13 +463,34 @@ class Resource(typing.NamedTuple):
     columns: typing.Any  # the list columns, or connection, items -> them
     details: typing.Any  # connection, item -> (label, value) pairs
     empty: str
-    # The OpenStack service behind it, for naming the one that is not
-    # answering on a page that cannot be drawn.
+    # The service this leans on, spelled as the catalogue spells it, so it
+    # can be looked for there and named when it is not answering.
     service: str = "cloud"
+    # What to say when the cloud has no such service at all. The generated
+    # line is usually enough; set this where a cloud's own wording helps.
+    absent: str = ""
     # Set where the CLI sorts a listing itself rather than printing it in
     # the order the service sent. Most do not; `image list` defaults to
     # --sort name:asc and reorders what glance returned.
     sort: typing.Any = None
+
+    @property
+    def label(self):
+        """The service named for a reader rather than for a catalogue."""
+        return self.service.replace("-", " ")
+
+    @property
+    def excuse(self):
+        return self.absent or f"no {self.label} service on this cloud"
+
+    def offered_by(self, catalogue):
+        """Whether this is worth offering, given what the cloud lists.
+
+        A catalogue of None means the question could not be answered, and
+        then everything is offered: a page that turns out to be empty is a
+        smaller wrong than a page silently withheld.
+        """
+        return catalogue is None or self.service in catalogue
 
     def columns_for(self, connection, items):
         if callable(self.columns):
@@ -520,7 +567,7 @@ CATALOGUE = {
         ),
         Resource(
             slug="volumes",
-            service="block storage",
+            service="block-storage",
             heading="Volumes",
             index=lambda connection: connection.block_storage.volumes(),
             fetch=lambda connection, name: connection.block_storage.get_volume(name),

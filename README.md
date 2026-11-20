@@ -100,6 +100,12 @@ the one thing you started that server to see.
 A refusal and an absence answer alike on purpose, so that nobody can map what
 exists by reading which of the two comes back.
 
+A project page offers only the kinds of thing the cloud actually runs. It
+decides from the service catalogue the token already carries, so a cloud
+without cinder shows no Volumes link rather than a link to a 503, and
+deciding costs no requests. A service that is listed but silent is a
+different matter and still gets as far as its own page.
+
 One service falling over takes down only the pages that need it. The side
 lookups are forgiving too: a server list still draws when glance cannot be
 reached, showing image ids in place of names, and a volume list still draws

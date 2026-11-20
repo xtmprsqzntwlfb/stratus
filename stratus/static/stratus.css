@@ -134,3 +134,6 @@ dd { font-family: ui-monospace, monospace; font-size: 0.9em; }
   border-radius: 3px;
   background: var(--accent);
 }
+
+.resources.absent { color: var(--dim); }
+.resources.absent .why { font-size: 0.85em; }

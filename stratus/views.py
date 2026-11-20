@@ -106,16 +106,39 @@ def project(project_id):
     errors.about("identity")
     with errors.scoped(project_id) as connection:
         found = connection.identity.get_project(project_id)
+        offered, absent = _what_this_cloud_runs(project_id, connection)
         return flask.render_template(
             "detail.html",
             heading=found.name,
             crumbs=[("Projects", flask.url_for("ui.projects"))],
-            holds=[
-                (resource.heading, flask.url_for("ui.collection", project_id=project_id, kind=slug))
-                for slug, resource in resources.CATALOGUE.items()
-            ],
+            holds=offered,
+            absent=absent,
             fields=resources.pairs_of(found, resources.PROJECT_SHOW),
         )
+
+
+def _what_this_cloud_runs(project_id, connection):
+    """Which kinds are worth linking to, and which the cloud does not run.
+
+    Decided from the catalogue the token already carries, so that a cloud
+    without cinder offers no Volumes link rather than a link to a 503, and
+    so that deciding it costs no requests. A service that is listed but
+    unwell still gets as far as its own page, which is where it belongs:
+    neutron being down is neutron's problem and not the servers page's.
+    """
+    catalogue = resources.catalogue_of(connection)
+    offered, absent = [], []
+    for slug, resource in resources.CATALOGUE.items():
+        if resource.offered_by(catalogue):
+            offered.append(
+                (
+                    resource.heading,
+                    flask.url_for("ui.collection", project_id=project_id, kind=slug),
+                )
+            )
+        else:
+            absent.append((resource.heading, resource.excuse))
+    return offered, absent
 
 
 def _kind(slug):
@@ -147,7 +170,7 @@ def collection(project_id, kind):
     resource = _kind(kind)
     with errors.scoped(project_id) as connection:
         # Scoping is behind us, so the service in question is now its own.
-        errors.about(resource.service)
+        errors.about(resource.label)
         found = resource.ordered(list(resource.index(connection)))
         columns = resource.columns_for(connection, found)
         rows = resources.rows_of(
@@ -174,7 +197,7 @@ def item(project_id, kind, item_id):
     resource = _kind(kind)
     with errors.scoped(project_id) as connection:
         # Scoping is behind us, so the service in question is now its own.
-        errors.about(resource.service)
+        errors.about(resource.label)
         found = resource.fetch(connection, item_id)
         return flask.render_template(
             "detail.html",

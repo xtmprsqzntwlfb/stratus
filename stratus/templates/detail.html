@@ -13,6 +13,14 @@
 </ul>
 {% endif %}
 
+{% if absent %}
+<ul class="resources absent">
+  {% for label, excuse in absent %}
+  <li>{{ label }} <span class="why">{{ excuse }}</span></li>
+  {% endfor %}
+</ul>
+{% endif %}
+
 <dl>
   {% for label, value in fields %}
   <dt>{{ label }}</dt><dd>{{ value }}</dd>
