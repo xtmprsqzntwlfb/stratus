@@ -137,8 +137,12 @@ or the show it is named after. Anything else it asks for is an *enrichment*,
 declared as `enrich` on the resource: a name to print where an id would do,
 the projects allowed a private flavor. Enrichments are wrapped rather than
 trusted, so a resource that declares one does not also have to remember to
-forgive it. When one fails the id stands in for the name, the failure goes
-to the log, and the page draws. The side
+forgive it.
+
+When one fails the page still draws, with an id where the name would have
+been, and it says so: a blank left by a failure looks exactly like a blank
+that is the truth, so the page carries a line naming what it could not find
+out. The same goes to the log as a warning, with the request id. The side
 lookups are forgiving too: a server list still draws when glance cannot be
 reached, showing image ids in place of names, and a volume list still draws
 when nova cannot be reached, showing server ids in place of names.

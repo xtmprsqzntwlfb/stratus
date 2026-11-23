@@ -20,6 +20,14 @@
     {% for category, message in get_flashed_messages(with_categories=true) %}
       <p class="flash {{ category }}">{{ message }}</p>
     {% endfor %}
+    {% if gaps %}
+      {# A blank left by a failed lookup looks like a blank that is true,
+         so the page says which blanks are which. #}
+      <p class="flash gap">
+        Shown without {{ gaps | join('; ') }}. That part of the cloud did not
+        answer, so some fields are left blank or show an id.
+      </p>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
 </body>

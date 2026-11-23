@@ -7,7 +7,7 @@ import keystoneauth1.exceptions
 import openstack.exceptions
 import pytest
 
-from stratus import auth, resources
+from stratus import auth, errors, resources
 
 PROJECT = "54766a28ae56492591852dc1b53e9b66"
 LOGGED_IN = {
@@ -113,14 +113,14 @@ class TestTheContract:
 
     def test_the_wrapper_catches_both_trees_and_nothing_else(self):
         """A bug in here is not weather and must not be swallowed."""
-        assert resources.optionally(lambda: "fine", "fallback") == "fine"
+        assert errors.optionally(lambda: "fine", "fallback") == "fine"
         for refusal in REFUSALS:
             def raise_it(e=refusal):
                 raise e
 
-            assert resources.optionally(raise_it, "fallback") == "fallback"
+            assert errors.optionally(raise_it, "fallback") == "fallback"
         with pytest.raises(TypeError):
-            resources.optionally(lambda: 1 + "one", "fallback")
+            errors.optionally(lambda: 1 + "one", "fallback")
 
     def test_one_unreadable_image_costs_only_its_own_name(self, client, cloud):
         """Per image, so a single deleted one does not blank the column."""
@@ -145,3 +145,87 @@ class TestTheContract:
             "refused"
         )
         assert client.get(f"/projects/{PROJECT}/servers").status_code == 503
+
+
+class TestSayingSo:
+    """A blank from a failure must not read as a blank that is true."""
+
+    def test_the_page_names_what_it_could_not_fetch(self, client, cloud):
+        cloud.compute.servers.return_value = [a_server()]
+        cloud.image.get_image.side_effect = keystoneauth1.exceptions.ConnectFailure(
+            "refused"
+        )
+        page = client.get(f"/projects/{PROJECT}/servers").get_data(as_text=True)
+        flowed = " ".join(page.split())  # the notice wraps in the markup
+        assert "Shown without image names" in flowed
+        assert "did not answer" in flowed
+
+    def test_a_whole_page_says_nothing_when_nothing_failed(self, client, cloud):
+        cloud.compute.servers.return_value = [a_server()]
+        cloud.image.get_image.return_value = types.SimpleNamespace(
+            id="img-1", name="cirros"
+        )
+        page = client.get(f"/projects/{PROJECT}/servers").get_data(as_text=True)
+        assert "Shown without" not in page
+
+    def test_a_flavor_says_what_it_could_not_find_out(self, client, cloud):
+        flavor = mock.MagicMock(is_public=False, id="secret", name="secret")
+        flavor.to_dict.return_value = {"id": "secret", "name": "secret"}
+        cloud.compute.get_flavor.return_value = flavor
+        cloud.compute.get_flavor_access.side_effect = (
+            keystoneauth1.exceptions.ConnectFailure("refused")
+        )
+        page = client.get(f"/projects/{PROJECT}/flavors/secret").get_data(as_text=True)
+        assert "which projects may use this flavor" in page
+
+    def test_one_gap_is_named_once_however_many_times_it_happens(
+        self, client, cloud
+    ):
+        second = a_server()
+        second.id, second.image = "s-2", types.SimpleNamespace(id="img-2")
+        cloud.compute.servers.return_value = [a_server(), second]
+        cloud.image.get_image.side_effect = keystoneauth1.exceptions.ConnectFailure(
+            "refused"
+        )
+        page = client.get(f"/projects/{PROJECT}/servers").get_data(as_text=True)
+        assert page.count("Shown without image names") == 1
+
+    def test_a_gap_does_not_follow_the_next_request(self, client, cloud):
+        cloud.compute.servers.return_value = [a_server()]
+        cloud.image.get_image.side_effect = keystoneauth1.exceptions.ConnectFailure(
+            "refused"
+        )
+        assert "Shown without" in client.get(
+            f"/projects/{PROJECT}/servers"
+        ).get_data(as_text=True)
+        cloud.image.get_image.side_effect = None
+        cloud.image.get_image.return_value = types.SimpleNamespace(
+            id="img-1", name="cirros"
+        )
+        assert "Shown without" not in client.get(
+            f"/projects/{PROJECT}/servers"
+        ).get_data(as_text=True)
+
+    def test_the_log_says_so_loudly_enough_to_be_seen(self, client, cloud, caplog):
+        """INFO is dropped by a default root logger. A gap is a warning."""
+        import logging
+
+        cloud.compute.servers.return_value = [a_server()]
+        cloud.image.get_image.side_effect = keystoneauth1.exceptions.ConnectFailure(
+            "refused"
+        )
+        with caplog.at_level(logging.WARNING):
+            client.get(f"/projects/{PROJECT}/servers")
+        assert "could not fetch image names" in caplog.text
+
+    def test_the_log_line_carries_the_request_id(self, client, cloud, caplog):
+        import logging
+
+        cloud.compute.servers.return_value = [a_server()]
+        cloud.image.get_image.side_effect = keystoneauth1.exceptions.ConnectFailure(
+            "refused"
+        )
+        with caplog.at_level(logging.WARNING):
+            client.get(f"/projects/{PROJECT}/servers")
+        warned = [r for r in caplog.records if "could not fetch" in r.message]
+        assert warned and warned[0].args[1] != "untagged"

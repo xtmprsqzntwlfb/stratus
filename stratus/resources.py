@@ -8,9 +8,10 @@ name for a field and openstacksdk's attribute name differ, both are here.
 import logging
 import typing
 
-import keystoneauth1.exceptions
 import openstack.exceptions
 import os_service_types
+
+from . import errors
 
 log = logging.getLogger(__name__)
 
@@ -19,32 +20,6 @@ log = logging.getLogger(__name__)
 # way the CLI spells it, since people grep for it.
 NO_IMAGE = "N/A (booted from volume)"
 
-# Failures of a cloud rather than of this code. Both trees, because they
-# are separate and a service that is merely unreachable raises from the
-# keystoneauth one, which is exactly the case an enrichment must survive.
-CLOUD_TROUBLE = (
-    openstack.exceptions.SDKException,
-    keystoneauth1.exceptions.ClientException,
-)
-
-
-def optionally(lookup, instead):
-    """Run an extra lookup, or give up quietly and carry on.
-
-    A page has one call it cannot do without, the list or the show it is
-    named after. Everything else is enrichment: a name to print where an
-    id would do, the projects allowed a private flavor. None of that is
-    worth a blank page. When an enrichment fails the id or the blank
-    stands in its place, the failure goes to the log, and the page draws.
-
-    Both exception trees are caught, and nothing else: a TypeError in
-    here is this code's own bug and has no business being swallowed.
-    """
-    try:
-        return lookup()
-    except CLOUD_TROUBLE as missed:
-        log.info("enrichment skipped: %s", missed)
-        return instead
 
 
 class Column(typing.NamedTuple):
@@ -166,8 +141,10 @@ def image_names(connection, servers):
     for identifier in {s.image.id for s in servers if s.image and s.image.id}:
         # One image at a time, so that one deleted since, or one this
         # account may not look at, costs only its own name.
-        name = optionally(
-            lambda i=identifier: connection.image.get_image(i).name, None
+        name = errors.optionally(
+            lambda i=identifier: connection.image.get_image(i).name,
+            None,
+            about="image names",
         )
         if name is not None:
             found[identifier] = name
@@ -322,8 +299,10 @@ def server_details(connection, server):
     image = shown.get("image") or {}
     identifier = image.get("id") if isinstance(image, dict) else None
     if identifier:
-        name = optionally(
-            lambda: connection.image.get_image(identifier).name, None
+        name = errors.optionally(
+            lambda: connection.image.get_image(identifier).name,
+            None,
+            about="the image name",
         )
         shown["image"] = f"{name} ({identifier})" if name else identifier
     else:
@@ -382,8 +361,10 @@ def flavor_access(connection, flavor):
     """
     if flavor.is_public:
         return None  # the CLI's answer for a flavor open to everybody
-    granted = optionally(
-        lambda: list(connection.compute.get_flavor_access(flavor.id)), None
+    granted = errors.optionally(
+        lambda: list(connection.compute.get_flavor_access(flavor.id)),
+        None,
+        about="which projects may use this flavor",
     )
     if granted is None:
         # Not finding out is not the same as nobody, and None here would
@@ -426,7 +407,11 @@ def server_names(connection, volumes):
     """
     if not any(volume.attachments for volume in volumes):
         return {}
-    listed = optionally(lambda: list(connection.compute.servers()), ())
+    listed = errors.optionally(
+        lambda: list(connection.compute.servers()),
+        (),
+        about="the names of the servers these are attached to",
+    )
     return {server.id: server.name for server in listed}
 
 
@@ -539,7 +524,11 @@ class Resource(typing.NamedTuple):
         """
         if self.enrich is None:
             return {}
-        return optionally(lambda: self.enrich(connection, items), {})
+        return errors.optionally(
+            lambda: self.enrich(connection, items),
+            {},
+            about=f"some {self.heading.lower()} details",
+        )
 
     def columns_for(self, extras):
         if callable(self.columns):

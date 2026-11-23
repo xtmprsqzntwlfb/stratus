@@ -137,3 +137,5 @@ dd { font-family: ui-monospace, monospace; font-size: 0.9em; }
 
 .resources.absent { color: var(--dim); }
 .resources.absent .why { font-size: 0.85em; }
+
+.flash.gap { border-left-color: goldenrod; }

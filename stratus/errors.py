@@ -57,8 +57,63 @@ DENIED_OR_ABSENT = (
 )
 
 
+# Failures of a cloud rather than of this code. Both trees, because they
+# are separate and a service that is merely unreachable raises from the
+# keystoneauth one, which is exactly the case an enrichment must survive.
+CLOUD_TROUBLE = (
+    openstack.exceptions.SDKException,
+    keystoneauth1.exceptions.ClientException,
+)
+
+# Where a request collects the things it could not find out.
+GAPS = "gaps"
+
+
+def optionally(lookup, instead, about=""):
+    """Run an extra lookup, or give up and say so.
+
+    A page has one call it cannot do without, the list or the show it is
+    named after. Everything else is enrichment: a name to print where an
+    id would do, the projects allowed a private flavor. None of that is
+    worth a blank page. When an enrichment fails the id or the blank
+    stands in its place and the page draws.
+
+    Saying so matters as much as surviving it, because a blank left by a
+    failure looks exactly like a blank that is the truth. So the gap is
+    named on the page and warned about in the log.
+
+    Both exception trees are caught, and nothing else: a TypeError in
+    here is this code's own bug and has no business being swallowed.
+    """
+    try:
+        return lookup()
+    except CLOUD_TROUBLE as missed:
+        log.warning("could not fetch %s [%s]: %s", about or "an extra", request_id(), missed)
+        note_gap(about)
+        return instead
+
+
+def note_gap(about):
+    if not about or not flask.has_request_context():
+        return
+    noted = getattr(flask.g, GAPS, None)
+    if noted is None:
+        noted = []
+        setattr(flask.g, GAPS, noted)
+    if about not in noted:
+        noted.append(about)
+
+
+def gaps():
+    """What this request wanted to show and could not find out."""
+    if not flask.has_request_context():
+        return []
+    return getattr(flask.g, GAPS, [])
+
+
 def register(app):
     app.before_request(_tag)
+    app.context_processor(lambda: {"gaps": gaps()})
     app.register_error_handler(404, lambda error: not_found())
     app.register_error_handler(openstack.exceptions.SDKException, respond_to)
     app.register_error_handler(keystoneauth1.exceptions.ClientException, respond_to)
@@ -143,6 +198,8 @@ def _tag():
 
 
 def request_id():
+    if not flask.has_request_context():
+        return "untagged"
     return getattr(flask.g, "request_id", "untagged")
 
 
@@ -152,6 +209,8 @@ def about(service):
 
 
 def subject():
+    if not flask.has_request_context():
+        return "cloud"
     return getattr(flask.g, "service", "cloud")
 
 
