@@ -5,15 +5,46 @@ cannot quietly stop matching the command it is named after. Where the CLI's
 name for a field and openstacksdk's attribute name differ, both are here.
 """
 
+import logging
 import typing
 
+import keystoneauth1.exceptions
 import openstack.exceptions
 import os_service_types
+
+log = logging.getLogger(__name__)
 
 # What `openstack server list` puts in the Image column for a server booted
 # straight from a volume, which therefore has no image. Worth spelling the
 # way the CLI spells it, since people grep for it.
 NO_IMAGE = "N/A (booted from volume)"
+
+# Failures of a cloud rather than of this code. Both trees, because they
+# are separate and a service that is merely unreachable raises from the
+# keystoneauth one, which is exactly the case an enrichment must survive.
+CLOUD_TROUBLE = (
+    openstack.exceptions.SDKException,
+    keystoneauth1.exceptions.ClientException,
+)
+
+
+def optionally(lookup, instead):
+    """Run an extra lookup, or give up quietly and carry on.
+
+    A page has one call it cannot do without, the list or the show it is
+    named after. Everything else is enrichment: a name to print where an
+    id would do, the projects allowed a private flavor. None of that is
+    worth a blank page. When an enrichment fails the id or the blank
+    stands in its place, the failure goes to the log, and the page draws.
+
+    Both exception trees are caught, and nothing else: a TypeError in
+    here is this code's own bug and has no business being swallowed.
+    """
+    try:
+        return lookup()
+    except CLOUD_TROUBLE as missed:
+        log.info("enrichment skipped: %s", missed)
+        return instead
 
 
 class Column(typing.NamedTuple):
@@ -131,13 +162,15 @@ def image_names(connection, servers):
     project holds servers, so listing them all to find two is the wrong way
     round.
     """
-    wanted = {s.image.id for s in servers if s.image and s.image.id}
     found = {}
-    for identifier in wanted:
-        try:
-            found[identifier] = connection.image.get_image(identifier).name
-        except openstack.exceptions.SDKException:
-            pass  # deleted since, or not one this account may look at
+    for identifier in {s.image.id for s in servers if s.image and s.image.id}:
+        # One image at a time, so that one deleted since, or one this
+        # account may not look at, costs only its own name.
+        name = optionally(
+            lambda i=identifier: connection.image.get_image(i).name, None
+        )
+        if name is not None:
+            found[identifier] = name
     return found
 
 
@@ -289,11 +322,10 @@ def server_details(connection, server):
     image = shown.get("image") or {}
     identifier = image.get("id") if isinstance(image, dict) else None
     if identifier:
-        try:
-            name = connection.image.get_image(identifier).name
-            shown["image"] = f"{name} ({identifier})"
-        except openstack.exceptions.SDKException:
-            shown["image"] = identifier
+        name = optionally(
+            lambda: connection.image.get_image(identifier).name, None
+        )
+        shown["image"] = f"{name} ({identifier})" if name else identifier
     else:
         shown["image"] = NO_IMAGE
 
@@ -349,11 +381,14 @@ def flavor_access(connection, flavor):
     everybody. A refusal leaves the field empty rather than the page.
     """
     if flavor.is_public:
-        return None
-    try:
-        granted = connection.compute.get_flavor_access(flavor.id)
-    except openstack.exceptions.SDKException:
-        return None
+        return None  # the CLI's answer for a flavor open to everybody
+    granted = optionally(
+        lambda: list(connection.compute.get_flavor_access(flavor.id)), None
+    )
+    if granted is None:
+        # Not finding out is not the same as nobody, and None here would
+        # be read as the line above. Say nothing instead.
+        return ""
     return [
         access.get("tenant_id") if isinstance(access, dict) else access.tenant_id
         for access in granted
@@ -391,10 +426,8 @@ def server_names(connection, volumes):
     """
     if not any(volume.attachments for volume in volumes):
         return {}
-    try:
-        return {server.id: server.name for server in connection.compute.servers()}
-    except openstack.exceptions.SDKException:
-        return {}
+    listed = optionally(lambda: list(connection.compute.servers()), ())
+    return {server.id: server.name for server in listed}
 
 
 def attached_to(volume, names):
@@ -460,9 +493,14 @@ class Resource(typing.NamedTuple):
     heading: str
     index: typing.Any  # connection -> the items
     fetch: typing.Any  # connection, id -> one item
-    columns: typing.Any  # the list columns, or connection, items -> them
+    columns: typing.Any  # the list columns, or extras -> them
     details: typing.Any  # connection, item -> (label, value) pairs
     empty: str
+    # A second call the listing would like but can do without: names for
+    # the ids the primary call returned, mostly. Whatever it gives back
+    # is handed to `columns`. It is allowed to fail, and when it does the
+    # listing still draws with ids where names would have been.
+    enrich: typing.Any = None
     # The service this leans on, spelled as the catalogue spells it, so it
     # can be looked for there and named when it is not answering.
     service: str = "cloud"
@@ -492,9 +530,20 @@ class Resource(typing.NamedTuple):
         """
         return catalogue is None or self.service in catalogue
 
-    def columns_for(self, connection, items):
+    def extras(self, connection, items):
+        """Whatever the listing wants beyond its primary call.
+
+        Wrapped rather than trusted, so that a resource declaring an
+        enrichment does not also have to remember to forgive it. The
+        primary call above is the only one allowed to fail the page.
+        """
+        if self.enrich is None:
+            return {}
+        return optionally(lambda: self.enrich(connection, items), {})
+
+    def columns_for(self, extras):
         if callable(self.columns):
-            return self.columns(connection, items)
+            return self.columns(extras)
         return self.columns
 
     def ordered(self, items):
@@ -510,9 +559,8 @@ CATALOGUE = {
             heading="Servers",
             index=lambda connection: connection.compute.servers(),
             fetch=lambda connection, name: connection.compute.get_server(name),
-            columns=lambda connection, items: server_list(
-                image_names(connection, items)
-            ),
+            enrich=image_names,
+            columns=server_list,
             details=server_details,
             empty="No servers in this project.",
         ),
@@ -571,9 +619,8 @@ CATALOGUE = {
             heading="Volumes",
             index=lambda connection: connection.block_storage.volumes(),
             fetch=lambda connection, name: connection.block_storage.get_volume(name),
-            columns=lambda connection, items: volume_list(
-                server_names(connection, items)
-            ),
+            enrich=server_names,
+            columns=volume_list,
             details=volume_details,
             empty="No volumes in this project.",
         ),

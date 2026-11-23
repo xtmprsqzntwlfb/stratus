@@ -172,7 +172,7 @@ def collection(project_id, kind):
         # Scoping is behind us, so the service in question is now its own.
         errors.about(resource.label)
         found = resource.ordered(list(resource.index(connection)))
-        columns = resource.columns_for(connection, found)
+        columns = resource.columns_for(resource.extras(connection, found))
         rows = resources.rows_of(
             found,
             columns,
