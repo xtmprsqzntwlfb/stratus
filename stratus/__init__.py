@@ -4,7 +4,7 @@ import os
 
 import flask
 
-from . import config, errors, views
+from . import config, errors, sessions, views
 
 __version__ = "0.1.0"
 
@@ -36,5 +36,6 @@ def create_app(**overrides):
     app.config.from_prefixed_env("STRATUS")
     app.config.update(overrides)
     app.register_blueprint(views.bp)
+    sessions.install(app)
     errors.register(app)
     return app

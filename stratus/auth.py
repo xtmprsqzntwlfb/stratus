@@ -17,6 +17,8 @@ import keystoneauth1.exceptions
 import openstack.config
 import openstack.connection
 
+from . import sessions
+
 APP_NAME = "stratus"
 APP_VERSION = "0.1.0"
 
@@ -67,17 +69,24 @@ def log_in(credentials):
     """Trade a password for a token and keep it. Raises AuthError if not."""
     connection = _connect("v3password", **credentials)
     try:
-        token = connection.session.get_token()
+        # The whole answer rather than just the token, because it also
+        # carries the moment the token dies, and the session record has
+        # no business outliving that.
+        granted = connection.session.auth.get_access(connection.session)
     except keystoneauth1.exceptions.ClientException as failure:
         raise AuthError(_explain(failure, credentials["auth_url"]))
 
     remembered = {key: value for key, value in credentials.items() if key != "password"}
-    remembered["token"] = token
+    remembered["token"] = granted.auth_token
+    # A fresh name before anything is written under it, so that a name
+    # planted in the browser beforehand cannot become a logged-in one.
+    sessions.renew()
     flask.session[CLOUD] = remembered
+    flask.session[sessions.EXPIRY] = granted.expires.isoformat()
 
 
 def log_out():
-    flask.session.pop(CLOUD, None)
+    sessions.destroy()
 
 
 def cloud():

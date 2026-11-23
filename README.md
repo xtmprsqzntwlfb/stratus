@@ -81,6 +81,30 @@ from volume)` in those words, because people grep for them. Nested values
 render as `key=value` pairs rather than as a Python dictionary, keeping the
 empty ones as the CLI keeps them.
 
+## Where the token lives
+
+Not in the browser. Flask's default session signs its cookie but does not
+encrypt it, so anything put there is readable by whoever holds the browser,
+and a Keystone token is a bearer credential: reading one is enough to act as
+that user until it expires. So the cookie carries an unguessable name and
+nothing else, and the session it names is held here.
+
+The store is an expiring dict in the process. A record is dropped when its
+token expires or when `PERMANENT_SESSION_LIFETIME` runs out, whichever comes
+first, and logging out drops it immediately. Logging in takes a new name, so
+a name planted in a browser beforehand cannot become a logged-in one.
+
+**One process only.** An in-memory store is not shared, so behind `gunicorn
+-w 4`, or more than one host, a session would be found only by the worker
+that created it. `sessions.install(app, store)` takes anything with `read`,
+`write` and `drop`; point it at memcached or Redis before running more than
+one worker.
+
+The cookie is `HttpOnly`, `SameSite=Lax` and `Secure`. That last one means it
+will not travel over plain HTTP, so a development server on
+`http://127.0.0.1` needs `SESSION_COOKIE_SECURE = False` in
+`local_settings.py`, and nothing else ever should.
+
 ## When the cloud misbehaves
 
 Clouds fail in ways that are nobody's bug, and `stratus/errors.py` is the one

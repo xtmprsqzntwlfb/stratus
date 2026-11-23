@@ -9,6 +9,7 @@ Each layer overrides the one before it:
 A name has to be in capitals to count as a setting, in all three.
 """
 
+import datetime
 import secrets
 
 # Where Keystone lives, pre-filling the login form. Empty means the form
@@ -27,7 +28,18 @@ SECRET_KEY = secrets.token_bytes(32)
 # True, or a path to a CA bundle, or False to accept any TLS certificate.
 VERIFY = True
 
-# The token is a bearer credential: keep the cookie out of reach of scripts
-# and off requests that another site sets off.
+# The cookie holds only a name for a session kept on the server, but that
+# name is as good as the token behind it, so it is guarded the same way:
+# never readable by a script, never sent on another site's request, and
+# never over plain HTTP.
+SESSION_COOKIE_NAME = "stratus"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SAMESITE = "Lax"
+# Turn this off only to run the development server over http, and only
+# then. A cookie sent in clear is a session anyone on the path can take.
+SESSION_COOKIE_SECURE = True
+
+# How long a session may live without its token saying otherwise. The
+# record expires with the token when that comes first, which it usually
+# does, Keystone handing out hours rather than days.
+PERMANENT_SESSION_LIFETIME = datetime.timedelta(hours=12)

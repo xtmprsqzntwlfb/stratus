@@ -31,3 +31,12 @@ USER_DOMAIN_NAME = "Default"
 # a reasonable thing to do against a test cloud with a self-signed one and an
 # unreasonable thing to do anywhere else.
 # VERIFY = True
+
+# The session cookie holds only a name; the Keystone token behind it stays
+# on the server. That name is still worth the same as the token, so the
+# cookie is Secure by default and will not travel over plain HTTP. Running
+# the development server on http://127.0.0.1 therefore needs this:
+#
+# SESSION_COOKIE_SECURE = False
+#
+# Never set it on a deployment that anyone else can reach.

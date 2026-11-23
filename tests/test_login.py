@@ -1,3 +1,4 @@
+import datetime
 import unittest.mock as mock
 
 import keystoneauth1.exceptions
@@ -19,10 +20,16 @@ def keystone():
     openstacksdk assembling a session really runs, and only the request over
     the wire is replaced.
     """
+    granted = mock.Mock(
+        auth_token="a-token",
+        expires=datetime.datetime.now(datetime.timezone.utc)
+        + datetime.timedelta(hours=1),
+    )
     with mock.patch(
-        "keystoneauth1.session.Session.get_token", return_value="a-token"
-    ) as get_token:
-        yield get_token
+        "keystoneauth1.identity.base.BaseIdentityPlugin.get_access",
+        return_value=granted,
+    ) as get_access:
+        yield get_access
 
 
 def test_anonymous_is_sent_to_login(client):
