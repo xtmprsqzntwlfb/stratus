@@ -1,96 +1,26 @@
 """What the CLI prints, written down.
 
-Every list and show page renders one of these declarations, so a page
-cannot quietly stop matching the command it is named after. Where the CLI's
-name for a field and openstacksdk's attribute name differ, both are here.
+One declaration per kind of thing a project holds, saying which columns a
+listing has, which fields a show page has, how to fetch either, and which
+service it leans on. A page cannot quietly stop matching the command it is
+named after, because the page is the declaration.
+
+The machinery that turns these into rows and pairs lives in fields.py and
+knows nothing about OpenStack. What follows is arranged by service, each
+with its own constants, its own quirks and the reasons for them.
 """
 
-import logging
 import typing
 
-import openstack.exceptions
 import os_service_types
 
 from . import errors
-
-log = logging.getLogger(__name__)
-
-# What `openstack server list` puts in the Image column for a server booted
-# straight from a volume, which therefore has no image. Worth spelling the
-# way the CLI spells it, since people grep for it.
-NO_IMAGE = "N/A (booted from volume)"
+from .fields import Column, containers_in, fields_of, rendered
 
 
-
-class Column(typing.NamedTuple):
-    """One field, labelled the way the CLI labels it.
-
-    ``source`` is an openstacksdk attribute name, or a function of the
-    resource for the columns the CLI works out rather than reads.
-    """
-
-    label: str
-    source: typing.Any
-
-    def of(self, resource):
-        if callable(self.source):
-            return self.source(resource)
-        return getattr(resource, self.source, None)
-
-
-def rows_of(resources, columns, link=None):
-    """One row per resource, for a list page.
-
-    ``link`` turns a resource into the address its row points at. By
-    convention the first cell carries it, the first column being the
-    identifier in every listing the CLI prints.
-    """
-    return [
-        {
-            "cells": [column.of(resource) for column in columns],
-            "link": link(resource) if link else None,
-        }
-        for resource in resources
-    ]
-
-
-def readable(value, prefix=""):
-    """A value as a page should show it rather than as Python repr()s it.
-
-    Nested dictionaries and lists are what the CLI runs through its own
-    formatting columns, and printing a raw ``{'disk': 0, 'ram': 0}`` into a
-    page is the one thing neither of them does.
-    """
-    if value is None:
-        return ""
-    if isinstance(value, dict):
-        # Every key is kept, including the ones with nothing behind them,
-        # because the CLI prints those too and a field that is empty is
-        # worth telling apart from a field that is absent. A dictionary
-        # inside a dictionary flattens onto a dotted name, as the CLI
-        # flattens it, so that the one = in an entry is the real one.
-        parts = []
-        for key, item in sorted(value.items()):
-            name = f"{prefix}{key}"
-            if isinstance(item, dict) and item:
-                parts.append(readable(item, prefix=f"{name}."))
-            else:
-                parts.append(f"{name}={readable(item)}")
-        return ", ".join(parts)
-    if isinstance(value, (list, tuple, set, frozenset)):
-        return ", ".join(str(readable(item)) for item in value)
-    return value
-
-
-def pairs_of(resource, columns):
-    """(label, value) for each field, for a show page.
-
-    Values go out as they are. `openstack project show` runs none of its
-    fields through a formatting column, so an empty options prints as {}
-    there and the page says the same.
-    """
-    return [(column.label, column.of(resource)) for column in columns]
-
+########################################################################
+# Identity: projects
+########################################################################
 
 # `openstack project list`
 PROJECT_LIST = (Column("ID", "id"), Column("Name", "name"))
@@ -109,11 +39,46 @@ PROJECT_SHOW = (
     Column("tags", "tags"),
 )
 
+########################################################################
+# Compute: servers
+########################################################################
+
+# What `openstack server list` puts in the Image column for a server booted
+# straight from a volume, which therefore has no image. Worth spelling the
+# way the CLI spells it, since people grep for it.
+NO_IMAGE = "N/A (booted from volume)"
+
+# The power state is a number on the wire and a word in the CLI. Index is
+# the number; the gaps are states nova never reports.
+POWER_STATES = (
+    "NOSTATE",
+    "Running",
+    "",
+    "Paused",
+    "Shutdown",
+    "",
+    "Crashed",
+    "Suspended",
+)
+
+def power_state(value):
+    try:
+        return POWER_STATES[value]
+    except (IndexError, TypeError):
+        return "N/A"
+
+def addresses_of(addresses):
+    """The addresses dict, joined the way both list and show join it."""
+    return "; ".join(
+        "{}={}".format(
+            network, ", ".join(a["addr"] for a in entries or () if "addr" in a)
+        )
+        for network, entries in sorted((addresses or {}).items())
+    )
 
 def networks_of(server):
     """The Networks column: ``net=ip, ip; other=ip``, as the CLI joins it."""
     return addresses_of(server.addresses)
-
 
 def flavor_of(server):
     """The Flavor column.
@@ -126,7 +91,6 @@ def flavor_of(server):
     if flavor is None:
         return ""
     return flavor.original_name or flavor.id or ""
-
 
 def image_names(connection, servers):
     """Map image id to image name for the images these servers came from.
@@ -150,7 +114,6 @@ def image_names(connection, servers):
             found[identifier] = name
     return found
 
-
 def server_list(images):
     """`openstack server list`, given the image names it needs to print."""
 
@@ -168,7 +131,6 @@ def server_list(images):
         Column("Image", image_of),
         Column("Flavor", flavor_of),
     )
-
 
 # `openstack server show` prints the whole resource rather than a chosen few
 # fields, so it is described by what to leave out rather than what to put in.
@@ -218,80 +180,6 @@ SERVER_SHOW_FORMATTED = frozenset(
     }
 )
 
-
-# The power state is a number on the wire and a word in the CLI. Index is
-# the number; the gaps are states nova never reports.
-POWER_STATES = (
-    "NOSTATE",
-    "Running",
-    "",
-    "Paused",
-    "Shutdown",
-    "",
-    "Crashed",
-    "Suspended",
-)
-
-
-def power_state(value):
-    try:
-        return POWER_STATES[value]
-    except (IndexError, TypeError):
-        return "N/A"
-
-
-def addresses_of(addresses):
-    """The addresses dict, joined the way both list and show join it."""
-    return "; ".join(
-        "{}={}".format(
-            network, ", ".join(a["addr"] for a in entries or () if "addr" in a)
-        )
-        for network, entries in sorted((addresses or {}).items())
-    )
-
-
-# Bookkeeping openstacksdk hangs on every resource, which no API returns.
-SDK_BOOKKEEPING = frozenset({"location"})
-
-
-def fields_of(item, skips=frozenset(), optional=frozenset(), ignore_none=False):
-    """A resource as a dict, under openstacksdk's own names.
-
-    The CLI renames these to what each service called them before printing,
-    so a server's `created_at` reaches a terminal as `created` and its
-    `power_state` as `OS-EXT-STS:power_state`. Those names are fossils of
-    API extensions folded into the APIs years ago, and carrying them into a
-    browser buys nothing, so the SDK's names stand. Which fields appear
-    still follows the CLI.
-
-    ``ignore_none`` drops attributes the service did not send. Glance needs
-    it, because the SDK's image class declares every property an image
-    could ever carry and a real one sets a quarter of them. Compute and
-    neutron do not, because the nulls they send are answers.
-    """
-    shown = {}
-    for key, value in item.to_dict(ignore_none=ignore_none).items():
-        if key in SDK_BOOKKEEPING or key in skips:
-            continue
-        if key in optional and value is None:
-            continue
-        shown[key] = value
-    return shown
-
-
-def rendered(shown, formatted=frozenset()):
-    """Sorted (label, value) pairs, formatting only what needs it.
-
-    Everything else goes out as it is, so a None prints as None and an
-    empty list as [], which is what the CLI prints for a field it does not
-    run through a formatting column of its own.
-    """
-    return sorted(
-        (key, readable(value) if key in formatted else value)
-        for key, value in shown.items()
-    )
-
-
 def server_details(connection, server):
     """`openstack server show`."""
     shown = fields_of(server, skips=SERVER_SHOW_SKIPS, optional=SERVER_SHOW_OPTIONAL)
@@ -328,29 +216,9 @@ def server_details(connection, server):
 
     return rendered(shown, SERVER_SHOW_FORMATTED)
 
-
-def image_details(connection, image):
-    """`openstack image show`."""
-    shown = fields_of(image, ignore_none=True)
-    return rendered(shown, containers_in(shown))
-
-
-def network_details(connection, network):
-    """`openstack network show`."""
-    # tenant_id is project_id under the name neutron used to use, and
-    # if_match is a request header the SDK keeps on the resource.
-    shown = fields_of(network, skips={"if_match", "tenant_id"})
-    return rendered(shown, containers_in(shown))
-
-
-def flavor_details(connection, flavor):
-    """`openstack flavor show`."""
-    # original_name is the SDK's copy of name, kept for servers that embed
-    # a flavor. The CLI hides it and so does this.
-    shown = fields_of(flavor, skips={"original_name"})
-    shown["access_project_ids"] = flavor_access(connection, flavor)
-    return rendered(shown, containers_in(shown))
-
+########################################################################
+# Compute: flavors
+########################################################################
 
 def flavor_access(connection, flavor):
     """Which projects may use a private flavor, or None for a public one.
@@ -375,27 +243,37 @@ def flavor_access(connection, flavor):
         for access in granted
     ]
 
-
-# Columns cinder no longer fills in, and ones that only mean anything on
-# the way in. The CLI drops the same set, under the API's names for them.
-VOLUME_SHOW_SKIPS = frozenset(
-    {
-        "extended_replication_status",
-        "image_id",
-        "replication_driver_data",
-        "scheduler_hints",
-    }
-)
-VOLUME_SHOW_OPTIONAL = frozenset(
-    {"consistency_group_id", "encryption_key_id", "volume_image_metadata"}
-)
-
-
-def volume_details(connection, volume):
-    """`openstack volume show`."""
-    shown = fields_of(volume, skips=VOLUME_SHOW_SKIPS, optional=VOLUME_SHOW_OPTIONAL)
+def flavor_details(connection, flavor):
+    """`openstack flavor show`."""
+    # original_name is the SDK's copy of name, kept for servers that embed
+    # a flavor. The CLI hides it and so does this.
+    shown = fields_of(flavor, skips={"original_name"})
+    shown["access_project_ids"] = flavor_access(connection, flavor)
     return rendered(shown, containers_in(shown))
 
+########################################################################
+# Image
+########################################################################
+
+def image_details(connection, image):
+    """`openstack image show`."""
+    shown = fields_of(image, ignore_none=True)
+    return rendered(shown, containers_in(shown))
+
+########################################################################
+# Network
+########################################################################
+
+def network_details(connection, network):
+    """`openstack network show`."""
+    # tenant_id is project_id under the name neutron used to use, and
+    # if_match is a request header the SDK keeps on the resource.
+    shown = fields_of(network, skips={"if_match", "tenant_id"})
+    return rendered(shown, containers_in(shown))
+
+########################################################################
+# Block storage: volumes
+########################################################################
 
 def server_names(connection, volumes):
     """Names for the servers these volumes are attached to.
@@ -414,7 +292,6 @@ def server_names(connection, volumes):
     )
     return {server.id: server.name for server in listed}
 
-
 def attached_to(volume, names):
     """The Attached to column, spaced as the CLI spaces it."""
     return "".join(
@@ -424,7 +301,6 @@ def attached_to(volume, names):
         )
         for attachment in volume.attachments or ()
     )
-
 
 def volume_list(names):
     """`openstack volume list`, given the server names it needs to print."""
@@ -436,21 +312,34 @@ def volume_list(names):
         Column("Attached to", lambda volume: attached_to(volume, names)),
     )
 
-
-def containers_in(shown):
-    """The keys holding a list or a dict, which are the ones worth joining."""
-    return {
-        key
-        for key, value in shown.items()
-        if isinstance(value, (dict, list, tuple, set, frozenset))
+# Columns cinder no longer fills in, and ones that only mean anything on
+# the way in. The CLI drops the same set, under the API's names for them.
+VOLUME_SHOW_SKIPS = frozenset(
+    {
+        "extended_replication_status",
+        "image_id",
+        "replication_driver_data",
+        "scheduler_hints",
     }
+)
 
+VOLUME_SHOW_OPTIONAL = frozenset(
+    {"consistency_group_id", "encryption_key_id", "volume_image_metadata"}
+)
+
+def volume_details(connection, volume):
+    """`openstack volume show`."""
+    shown = fields_of(volume, skips=VOLUME_SHOW_SKIPS, optional=VOLUME_SHOW_OPTIONAL)
+    return rendered(shown, containers_in(shown))
+
+########################################################################
+# The registry
+########################################################################
 
 # Clouds name the same service differently depending on their age, so
 # volumev3 and block-storage have to come out as one thing before anything
 # can be looked up by name. openstacksdk carries this table already.
 SERVICE_TYPES = os_service_types.ServiceTypes()
-
 
 def catalogue_of(connection):
     """The service types this token was told about, or None if unknown.
@@ -469,7 +358,6 @@ def catalogue_of(connection):
     # An empty catalogue means the token never carried one, not that the
     # cloud runs nothing, so say that the question went unanswered.
     return offered or None
-
 
 class Resource(typing.NamedTuple):
     """One kind of thing a project holds, and the two pages showing it."""
@@ -537,7 +425,6 @@ class Resource(typing.NamedTuple):
 
     def ordered(self, items):
         return sorted(items, key=self.sort) if self.sort else items
-
 
 CATALOGUE = {
     resource.slug: resource

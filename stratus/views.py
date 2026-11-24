@@ -4,7 +4,7 @@ import typing
 
 import flask
 
-from . import auth, errors, resources
+from . import auth, errors, fields, resources
 
 bp = flask.Blueprint("ui", __name__)
 
@@ -81,7 +81,7 @@ def projects():
     errors.about("identity")
     connection = auth.connection()
     mine = connection.identity.user_projects(connection.session.get_user_id())
-    rows = resources.rows_of(
+    rows = fields.rows_of(
         mine,
         resources.PROJECT_LIST,
         link=lambda found: flask.url_for("ui.project", project_id=found.id),
@@ -113,7 +113,7 @@ def project(project_id):
             crumbs=[("Projects", flask.url_for("ui.projects"))],
             holds=offered,
             absent=absent,
-            fields=resources.pairs_of(found, resources.PROJECT_SHOW),
+            fields=fields.pairs_of(found, resources.PROJECT_SHOW),
         )
 
 
@@ -173,7 +173,7 @@ def collection(project_id, kind):
         errors.about(resource.label)
         found = resource.ordered(list(resource.index(connection)))
         columns = resource.columns_for(resource.extras(connection, found))
-        rows = resources.rows_of(
+        rows = fields.rows_of(
             found,
             columns,
             link=lambda item: flask.url_for(

@@ -6,7 +6,7 @@ import unittest.mock as mock
 
 import pytest
 
-from stratus import auth, sessions
+from stratus import sessions
 
 CREDENTIALS = {
     "auth_url": "https://keystone.test/v3",
