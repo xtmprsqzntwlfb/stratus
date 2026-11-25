@@ -141,6 +141,17 @@ def _what_this_cloud_runs(project_id, connection):
     return offered, absent
 
 
+def _project_label(project_id, connection):
+    """What to call the project in the trail.
+
+    Its name, which the scoped token already carries, falling back to the
+    id if the token somehow cannot say. No banner for that: the id is
+    what the address bar shows anyway, so it is a label, not a gap.
+    """
+    named = errors.optionally(lambda: auth.project_name(connection), None)
+    return named or project_id
+
+
 def _kind(slug):
     resource = resources.CATALOGUE.get(slug)
     if resource is None:
@@ -148,10 +159,13 @@ def _kind(slug):
     return resource
 
 
-def _crumbs(project_id, resource=None):
+def _crumbs(project_id, connection, resource=None):
     trail = [
         ("Projects", flask.url_for("ui.projects")),
-        ("project", flask.url_for("ui.project", project_id=project_id)),
+        (
+            _project_label(project_id, connection),
+            flask.url_for("ui.project", project_id=project_id),
+        ),
     ]
     if resource is not None:
         trail.append(
@@ -183,7 +197,7 @@ def collection(project_id, kind):
         return flask.render_template(
             "collection.html",
             heading=resource.heading,
-            crumbs=_crumbs(project_id),
+            crumbs=_crumbs(project_id, connection),
             columns=columns,
             rows=rows,
             empty=resource.empty,
@@ -202,7 +216,7 @@ def item(project_id, kind, item_id):
         return flask.render_template(
             "detail.html",
             heading=found.name or found.id,
-            crumbs=_crumbs(project_id, resource),
+            crumbs=_crumbs(project_id, connection, resource),
             fields=resource.details(connection, found),
         )
 

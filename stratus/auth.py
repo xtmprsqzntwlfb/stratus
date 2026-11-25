@@ -110,6 +110,16 @@ def connection(project_id=None):
     return _connect("v3token", **parameters)
 
 
+def project_name(connection):
+    """What the project a connection is scoped to is called.
+
+    Keystone names the project in the token it scoped, so this is already
+    in hand and costs nothing. Asking identity for it would be a request
+    per page, to put one word in a trail.
+    """
+    return connection.session.auth.get_access(connection.session).project_name
+
+
 def token_still_works():
     """Whether Keystone still recognises the token in the session.
 

@@ -112,7 +112,9 @@ def furnish(connection, project):
         a_project(THEIRS),
     ]
     connection.identity.get_project.return_value = a_project(project or MINE)
-    connection.session.auth.get_access.return_value.service_catalog.catalog = [
+    granted = connection.session.auth.get_access.return_value
+    granted.project_name = f"project-{project or MINE}"
+    granted.service_catalog.catalog = [
         {"type": t}
         for t in ("identity", "compute", "image", "network", "block-storage")
     ]
