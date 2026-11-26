@@ -4,5 +4,6 @@
 {% block content %}
 {% include "crumbs.html" %}
 <h1>{{ heading }}</h1>
+{% include "filters.html" with context %}
 {% include "listing.html" with context %}
 {% endblock %}

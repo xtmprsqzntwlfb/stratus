@@ -185,8 +185,9 @@ def collection(project_id, kind):
     with errors.scoped(project_id) as connection:
         # Scoping is behind us, so the service in question is now its own.
         errors.about(resource.label)
-        found = resource.ordered(list(resource.index(connection)))
-        columns = resource.columns_for(resource.extras(connection, found))
+        query = resource.query_from(flask.request.args)
+        found = resource.ordered(list(resource.index(connection, **query)))
+        columns = resource.columns_for(resource.extras(connection, found), query)
         rows = fields.rows_of(
             found,
             columns,
@@ -201,6 +202,10 @@ def collection(project_id, kind):
             columns=columns,
             rows=rows,
             empty=resource.empty,
+            resource=resource,
+            project_id=project_id,
+            kind=kind,
+            given=flask.request.args,
         )
 
 

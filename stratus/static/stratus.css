@@ -139,3 +139,18 @@ dd { font-family: ui-monospace, monospace; font-size: 0.9em; }
 .resources.absent .why { font-size: 0.85em; }
 
 .flash.gap { border-left-color: goldenrod; }
+
+.filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.filters label { color: var(--dim); font-size: 0.85rem; }
+.filters input[type="text"], .filters input:not([type]) { width: 10rem; }
+.filters .tick { display: flex; align-items: center; gap: 0.3rem; }
+.filters .clear { color: var(--dim); font-size: 0.85rem; }

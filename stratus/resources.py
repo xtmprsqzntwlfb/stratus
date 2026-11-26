@@ -114,7 +114,7 @@ def image_names(connection, servers):
             found[identifier] = name
     return found
 
-def server_list(images):
+def server_list(images, query=()):
     """`openstack server list`, given the image names it needs to print."""
 
     def image_of(server):
@@ -123,7 +123,7 @@ def server_list(images):
             return NO_IMAGE
         return images.get(identifier, identifier)
 
-    return (
+    columns = (
         Column("ID", "id"),
         Column("Name", "name"),
         Column("Status", "status"),
@@ -131,6 +131,11 @@ def server_list(images):
         Column("Image", image_of),
         Column("Flavor", flavor_of),
     )
+    if dict(query).get("all_projects"):
+        # `server list --all-projects` adds it on the end, and only
+        # server list does: volume list with the same flag does not.
+        columns += (Column("Project ID", "project_id"),)
+    return columns
 
 # `openstack server show` prints the whole resource rather than a chosen few
 # fields, so it is described by what to leave out rather than what to put in.
@@ -302,7 +307,7 @@ def attached_to(volume, names):
         for attachment in volume.attachments or ()
     )
 
-def volume_list(names):
+def volume_list(names, query=()):
     """`openstack volume list`, given the server names it needs to print."""
     return (
         Column("ID", "id"),
@@ -359,6 +364,13 @@ def catalogue_of(connection):
     # cloud runs nothing, so say that the question went unanswered.
     return offered or None
 
+class Filter(typing.NamedTuple):
+    """One way a listing may be narrowed, as the CLI narrows it."""
+
+    name: str  # the key in the query string and on the way to the SDK
+    label: str
+
+
 class Resource(typing.NamedTuple):
     """One kind of thing a project holds, and the two pages showing it."""
 
@@ -369,6 +381,12 @@ class Resource(typing.NamedTuple):
     columns: typing.Any  # the list columns, or extras -> them
     details: typing.Any  # connection, item -> (label, value) pairs
     empty: str
+    # What the CLI lets this listing be narrowed by. Only these reach the
+    # SDK: a query parameter nobody declared is dropped rather than
+    # forwarded, so the address bar cannot invent arguments for it.
+    filters: tuple = ()
+    # Whether the CLI has --all-projects for it. Nova and cinder do.
+    all_projects: bool = False
     # A second call the listing would like but can do without: names for
     # the ids the primary call returned, mostly. Whatever it gives back
     # is handed to `columns`. It is allowed to fail, and when it does the
@@ -418,10 +436,25 @@ class Resource(typing.NamedTuple):
             about=f"some {self.heading.lower()} details",
         )
 
-    def columns_for(self, extras):
+    def columns_for(self, extras, query=()):
         if callable(self.columns):
-            return self.columns(extras)
+            return self.columns(extras, dict(query))
         return self.columns
+
+    def query_from(self, given):
+        """The filters this resource understands, as the request gave them.
+
+        Anything undeclared is ignored rather than passed along. The
+        alternative is letting a URL hand arbitrary keywords to the SDK.
+        """
+        query = {}
+        for narrowing in self.filters:
+            value = (given.get(narrowing.name) or "").strip()
+            if value:
+                query[narrowing.name] = value
+        if self.all_projects and given.get("all_projects"):
+            query["all_projects"] = True
+        return query
 
     def ordered(self, items):
         return sorted(items, key=self.sort) if self.sort else items
@@ -431,9 +464,11 @@ CATALOGUE = {
     for resource in (
         Resource(
             slug="servers",
+            filters=(Filter("name", "Name"), Filter("status", "Status")),
+            all_projects=True,
             service="compute",
             heading="Servers",
-            index=lambda connection: connection.compute.servers(),
+            index=lambda connection, **q: connection.compute.servers(**q),
             fetch=lambda connection, name: connection.compute.get_server(name),
             enrich=image_names,
             columns=server_list,
@@ -442,9 +477,10 @@ CATALOGUE = {
         ),
         Resource(
             slug="images",
+            filters=(Filter("name", "Name"), Filter("status", "Status")),
             service="image",
             heading="Images",
-            index=lambda connection: connection.image.images(),
+            index=lambda connection, **q: connection.image.images(**q),
             fetch=lambda connection, name: connection.image.get_image(name),
             columns=(
                 Column("ID", "id"),
@@ -457,9 +493,10 @@ CATALOGUE = {
         ),
         Resource(
             slug="networks",
+            filters=(Filter("name", "Name"), Filter("status", "Status")),
             service="network",
             heading="Networks",
-            index=lambda connection: connection.network.networks(),
+            index=lambda connection, **q: connection.network.networks(**q),
             fetch=lambda connection, name: connection.network.get_network(name),
             columns=(
                 Column("ID", "id"),
@@ -475,7 +512,7 @@ CATALOGUE = {
             heading="Flavors",
             # is_public=True is what the CLI asks for unless told --all or
             # --private, and it is what nova assumes anyway.
-            index=lambda connection: connection.compute.flavors(is_public=True),
+            index=lambda connection, **q: connection.compute.flavors(is_public=True, **q),
             fetch=lambda connection, name: connection.compute.get_flavor(name),
             columns=(
                 Column("ID", "id"),
@@ -491,9 +528,11 @@ CATALOGUE = {
         ),
         Resource(
             slug="volumes",
+            filters=(Filter("name", "Name"), Filter("status", "Status")),
+            all_projects=True,
             service="block-storage",
             heading="Volumes",
-            index=lambda connection: connection.block_storage.volumes(),
+            index=lambda connection, **q: connection.block_storage.volumes(**q),
             fetch=lambda connection, name: connection.block_storage.get_volume(name),
             enrich=server_names,
             columns=volume_list,

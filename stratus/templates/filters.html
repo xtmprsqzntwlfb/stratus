@@ -1,0 +1,24 @@
+{# The narrowings the CLI has for this kind, as a GET form, so that a
+   filtered listing is a URL somebody can keep. #}
+{% if resource.filters or resource.all_projects %}
+<form class="filters" method="get">
+  {% for narrowing in resource.filters %}
+  <label for="by-{{ narrowing.name }}">{{ narrowing.label }}</label>
+  <input id="by-{{ narrowing.name }}"
+         name="{{ narrowing.name }}"
+         value="{{ given.get(narrowing.name, '') }}">
+  {% endfor %}
+  {% if resource.all_projects %}
+  <label class="tick">
+    <input type="checkbox" name="all_projects" value="1"
+           {% if given.get('all_projects') %}checked{% endif %}>
+    All projects
+  </label>
+  {% endif %}
+  <button type="submit">Filter</button>
+  {% if given %}
+  <a class="clear"
+     href="{{ url_for('ui.collection', project_id=project_id, kind=kind) }}">Clear</a>
+  {% endif %}
+</form>
+{% endif %}

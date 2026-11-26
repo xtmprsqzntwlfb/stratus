@@ -116,6 +116,27 @@ from volume)` in those words, because people grep for them. Nested values
 render as `key=value` pairs rather than as a Python dictionary, keeping the
 empty ones as the CLI keeps them.
 
+## Narrowing a listing
+
+Each kind declares the filters the CLI has for it, and a listing page puts
+them in a form. They are query parameters, so a filtered listing is a URL
+worth keeping:
+
+```
+/projects/<id>/servers?name=plum&status=ACTIVE
+/projects/<id>/servers?all_projects=1
+```
+
+Only declared filters reach the cloud. A parameter nobody declared is
+dropped rather than forwarded, so an address bar cannot hand arbitrary
+keywords to the SDK.
+
+`--all-projects` exists where the CLI has it, which is servers and volumes,
+and not where it does not: glance and neutron have no such flag. Turning it
+on for servers adds a Project ID column, as `server list --all-projects`
+does, and for volumes adds nothing, as `volume list --all-projects` also
+does. Flavors take no filters, because `flavor list` has none.
+
 ## Where the token lives
 
 Not in the browser. Flask's default session signs its cookie but does not
