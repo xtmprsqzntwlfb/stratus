@@ -150,35 +150,120 @@ class TestEnding:
         assert when > datetime.datetime.now(datetime.timezone.utc)
 
 
-class TestStore:
-    def test_it_forgets_what_has_expired(self):
-        store = sessions.ExpiringStore()
-        past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(1)
-        store.write("gone", {"a": 1}, past)
+@pytest.fixture(params=["memory", "files"])
+def store(request, tmp_path):
+    """Both stores must behave alike; only their reach differs."""
+    if request.param == "memory":
+        return sessions.ExpiringStore()
+    return sessions.FileStore(tmp_path / "sessions")
+
+
+def ahead(**kw):
+    return datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(**kw)
+
+
+def behind(**kw):
+    return datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(**kw)
+
+
+class TestEitherStore:
+    def test_it_keeps_what_has_not_expired(self, store):
+        store.write("here", {"a": 1}, ahead(days=1))
+        assert store.read("here") == {"a": 1}
+
+    def test_it_forgets_what_has(self, store):
+        store.write("gone", {"a": 1}, behind(days=1))
         assert store.read("gone") is None
         assert len(store) == 0
 
-    def test_it_keeps_what_has_not(self):
-        store = sessions.ExpiringStore()
-        ahead = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(1)
-        store.write("here", {"a": 1}, ahead)
-        assert store.read("here") == {"a": 1}
+    def test_it_knows_nothing_of_a_name_never_written(self, store):
+        assert store.read("never-heard-of-it") is None
 
-    def test_a_record_is_a_copy_not_a_handle(self):
-        """Nothing a request does to its session leaks into the store."""
-        store = sessions.ExpiringStore()
-        ahead = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(1)
+    def test_dropping_forgets_it(self, store):
+        store.write("here", {"a": 1}, ahead(days=1))
+        store.drop("here")
+        assert store.read("here") is None
+
+    def test_dropping_what_is_not_there_is_quiet(self, store):
+        store.drop("never-heard-of-it")
+
+    def test_a_record_is_a_copy_not_a_handle(self, store):
         contents = {"a": 1}
-        store.write("here", contents, ahead)
+        store.write("here", contents, ahead(days=1))
         contents["a"] = 2
         store.read("here")["a"] = 3
         assert store.read("here") == {"a": 1}
 
-    def test_passing_traffic_sweeps_the_dead(self):
-        store = sessions.ExpiringStore()
-        past = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(1)
-        ahead = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(1)
+    def test_passing_traffic_sweeps_the_dead(self, store):
         for n in range(5):
-            store.write(f"old-{n}", {}, past)
-        store.write("new", {}, ahead)
+            store.write(f"old-{n}", {}, behind(days=1))
+        store.write("new", {}, ahead(days=1))
         assert len(store) == 1
+
+    def test_a_session_survives_the_round_trip(self, store):
+        held = {"cloud": {"token": TOKEN, "username": "demo"}, "expires_at": "z"}
+        store.write("here", held, ahead(hours=1))
+        assert store.read("here") == held
+
+
+class TestTheFileStore:
+    """What it must get right that an in-memory dict gets for free."""
+
+    def test_two_of_them_on_one_directory_see_each_other(self, tmp_path):
+        """The whole reason it exists: workers are separate processes."""
+        worker = sessions.FileStore(tmp_path / "s")
+        other = sessions.FileStore(tmp_path / "s")
+        worker.write("shared", {"a": 1}, ahead(days=1))
+        assert other.read("shared") == {"a": 1}
+        other.drop("shared")
+        assert worker.read("shared") is None
+
+    @pytest.mark.parametrize(
+        "hostile",
+        ["../../etc/passwd", "../escape", "/etc/passwd", "a/b", "..", "."],
+    )
+    def test_a_name_from_a_cookie_cannot_become_a_path(self, tmp_path, hostile):
+        """Whatever a browser sends is hashed before it is a filename."""
+        store = sessions.FileStore(tmp_path / "s")
+        store.write(hostile, {"a": 1}, ahead(days=1))
+        written = [p for p in (tmp_path / "s").iterdir()]
+        assert len(written) == 1
+        assert written[0].parent == tmp_path / "s"
+        assert written[0].name.isalnum()
+        assert store.read(hostile) == {"a": 1}
+
+    def test_nothing_escapes_the_directory_even_on_read(self, tmp_path):
+        store = sessions.FileStore(tmp_path / "s")
+        (tmp_path / "secret").write_text('{"token": "not yours"}')
+        assert store.read("../secret") is None
+
+    def test_a_record_is_readable_only_by_its_owner(self, tmp_path):
+        store = sessions.FileStore(tmp_path / "s")
+        store.write("here", {"token": TOKEN}, ahead(days=1))
+        written = next((tmp_path / "s").iterdir())
+        assert oct(written.stat().st_mode)[-3:] == "600"
+
+    def test_the_directory_is_private_too(self, tmp_path):
+        sessions.FileStore(tmp_path / "s")
+        assert oct((tmp_path / "s").stat().st_mode)[-3:] == "700"
+
+    def test_a_half_written_record_is_no_session(self, tmp_path):
+        store = sessions.FileStore(tmp_path / "s")
+        store.write("here", {"a": 1}, ahead(days=1))
+        next((tmp_path / "s").iterdir()).write_text("{not json")
+        assert store.read("here") is None
+
+    def test_a_directory_is_made_when_it_is_missing(self, tmp_path):
+        where = tmp_path / "deep" / "down"
+        sessions.FileStore(where)
+        assert where.is_dir()
+
+
+class TestChoosingAStore:
+    def test_no_path_means_memory(self, app):
+        app.config["SESSION_STORE_PATH"] = ""
+        assert isinstance(sessions.chosen(app), sessions.ExpiringStore)
+
+    def test_a_path_means_files(self, app, tmp_path):
+        app.config["SESSION_STORE_PATH"] = str(tmp_path / "s")
+        assert isinstance(sessions.chosen(app), sessions.FileStore)

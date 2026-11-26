@@ -14,8 +14,14 @@ and drop will do, and `install` takes it.
 """
 
 import datetime
+import hashlib
+import json
+import os
+import pathlib
 import secrets
+import tempfile
 import threading
+import time
 
 import flask
 import flask.sessions
@@ -86,6 +92,74 @@ class ExpiringStore:
     def __len__(self):
         with self._lock:
             return len(self._records)
+
+
+class FileStore:
+    """Session records as files, for when one process is not enough.
+
+    An in-memory store is private to the process holding it, so behind
+    `gunicorn -w 4` a session would be found only by the worker that made
+    it and logging in would appear to come and go. These are shared by
+    every worker on the host, and need nothing installed to be so.
+
+    The name out of the cookie never becomes a path. It is hashed first,
+    so whatever a browser sends lands on one harmless filename in this
+    directory and cannot reach outside it.
+
+    Expiry is kept as the file's own modification time, which makes
+    sweeping a stat for each rather than a read.
+    """
+
+    def __init__(self, directory):
+        self.directory = pathlib.Path(directory)
+        self.directory.mkdir(parents=True, exist_ok=True)
+        # The contents are bearer tokens. Nobody else's business.
+        self.directory.chmod(0o700)
+
+    def _path(self, name):
+        return self.directory / hashlib.sha256(name.encode()).hexdigest()
+
+    def read(self, name):
+        path = self._path(name)
+        try:
+            if path.stat().st_mtime <= time.time():
+                path.unlink(missing_ok=True)
+                return None
+            return json.loads(path.read_text())
+        except (OSError, ValueError):
+            # Gone, unreadable, or half written by a worker that died.
+            # None of those is a session.
+            return None
+
+    def write(self, name, contents, expires):
+        self._sweep()
+        path = self._path(name)
+        moment = expires.timestamp()
+        handle, temporary = tempfile.mkstemp(dir=self.directory, suffix=".part")
+        with os.fdopen(handle, "w") as writing:
+            json.dump(contents, writing)
+        os.chmod(temporary, 0o600)
+        os.utime(temporary, (moment, moment))
+        # Renaming is atomic, so another worker reading this name sees
+        # either the record it had or this one, never half of one.
+        os.replace(temporary, path)
+
+    def drop(self, name):
+        self._path(name).unlink(missing_ok=True)
+
+    def _sweep(self):
+        moment = time.time()
+        for path in self.directory.iterdir():
+            if path.suffix == ".part":
+                continue  # somebody else is mid-write
+            try:
+                if path.stat().st_mtime <= moment:
+                    path.unlink()
+            except OSError:
+                pass  # swept by another worker in the meantime
+
+    def __len__(self):
+        return len([p for p in self.directory.iterdir() if p.suffix != ".part"])
 
 
 class Session(CallbackDict, flask.sessions.SessionMixin):
@@ -160,7 +234,17 @@ class ServerSide(flask.sessions.SessionInterface):
 
 
 def install(app, store=None):
-    app.session_interface = ServerSide(store if store is not None else ExpiringStore())
+    app.session_interface = ServerSide(store if store is not None else chosen(app))
+
+
+def chosen(app):
+    """The store a deployment asked for.
+
+    A path means files, shared by every worker on the host. Nothing means
+    memory, which is right for one process and wrong for two.
+    """
+    directory = app.config.get("SESSION_STORE_PATH")
+    return FileStore(directory) if directory else ExpiringStore()
 
 
 def _store():

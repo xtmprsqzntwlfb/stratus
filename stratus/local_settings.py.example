@@ -20,12 +20,19 @@ AUTH_URL = f"http://{OPENSTACK_HOST}/identity/v3"
 # Keystone domain of the user, unless the login form says otherwise.
 USER_DOMAIN_NAME = "Default"
 
-# Without a fixed key every restart invalidates the session cookies it signed
-# and logs everyone out. Generate one with:
+# Flask's signing key, which nothing signs with yet: the session cookie
+# holds only a name and the session itself stays on the server. Set one
+# anyway if you like; it costs nothing and will matter later.
 #
 #   python3 -c 'import secrets; print(secrets.token_hex(32))'
 #
 # SECRET_KEY = ""
+
+# Sessions in files rather than in memory, so that every worker behind
+# gunicorn finds the same ones. Without it a second worker bounces people
+# back to the login form at random.
+#
+# SESSION_STORE_PATH = "/var/lib/stratus/sessions"
 
 # True, or a path to a CA bundle. False accepts any TLS certificate, which is
 # a reasonable thing to do against a test cloud with a self-signed one and an

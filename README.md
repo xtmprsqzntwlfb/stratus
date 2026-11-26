@@ -52,6 +52,41 @@ Stratus is at <http://127.0.0.1:5000/>, and it asks for the same user name,
 password and domain the `openstack` client would. The endpoint only pre-fills
 the login form, so you can leave it unset and type it in instead.
 
+## Deploying it
+
+`flask run` is a development server. For anything else, install the package
+and point a real one at `stratus.wsgi:application`:
+
+```sh
+pip install .
+STRATUS_LOCAL_SETTINGS=/etc/stratus.py gunicorn -w 4 stratus.wsgi:application
+```
+
+Installed rather than run from a checkout, `local_settings.py` would land
+inside site-packages, which is no place for it. `STRATUS_LOCAL_SETTINGS`
+points somewhere sensible instead, and unlike the default file a path named
+that way must exist.
+
+Two settings matter more once there is a real server in front:
+
+| Setting | Why |
+| --- | --- |
+| `SESSION_STORE_PATH` | Sessions in files, shared by every worker. Without it they live in one process's memory and a second worker bounces people back to the login form at random |
+| `SESSION_COOKIE_SECURE` | Leave it `True`. It is only turned off to run the development server over plain HTTP |
+
+The session files hold Keystone tokens, so the directory is created `0700`
+and each record `0600`, and the name from the cookie is hashed before it is
+a filename, so nothing a browser sends can reach outside that directory.
+
+Beyond one host, files are not shared either. `sessions.install(app, store)`
+takes anything with `read`, `write` and `drop`.
+
+Tests and lint run under tox:
+
+```sh
+tox
+```
+
 ## How it talks to the cloud
 
 Through `openstacksdk`, and through the same part of it the CLI uses. The

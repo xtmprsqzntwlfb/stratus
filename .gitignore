@@ -5,3 +5,9 @@ __pycache__/
 
 # Deployment settings, one machine's business only.
 local_settings.py
+
+# Left behind by a build.
+build/
+dist/
+*.egg-info/
+.tox/
