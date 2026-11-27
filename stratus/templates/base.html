@@ -12,6 +12,7 @@
     {% if session.cloud %}
       <span class="whoami">{{ session.cloud.username }}</span>
       <form method="post" action="{{ url_for('ui.logout') }}">
+        {% include "csrf.html" %}
         <button type="submit">Log out</button>
       </form>
     {% endif %}

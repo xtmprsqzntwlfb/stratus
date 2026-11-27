@@ -3,6 +3,7 @@
 
 {% block content %}
 <form class="login" method="post">
+  {% include "csrf.html" %}
   <h1>Log in</h1>
   {% for field in fields %}
   <label for="{{ field.name }}">{{ field.label }}</label>

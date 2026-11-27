@@ -364,6 +364,15 @@ def catalogue_of(connection):
     # cloud runs nothing, so say that the question went unanswered.
     return offered or None
 
+class Action(typing.NamedTuple):
+    """Something the CLI can do to one of these, and this can too."""
+
+    name: str  # the URL segment, and the verb the CLI uses
+    label: str  # what the button says
+    perform: typing.Any  # connection, identifier -> None
+    done: str  # what to say when it worked, given {name}
+
+
 class Filter(typing.NamedTuple):
     """One way a listing may be narrowed, as the CLI narrows it."""
 
@@ -387,6 +396,8 @@ class Resource(typing.NamedTuple):
     filters: tuple = ()
     # Whether the CLI has --all-projects for it. Nova and cinder do.
     all_projects: bool = False
+    # What may be done to one, beyond looking at it.
+    actions: tuple = ()
     # A second call the listing would like but can do without: names for
     # the ids the primary call returned, mostly. Whatever it gives back
     # is handed to `columns`. It is allowed to fail, and when it does the
@@ -441,6 +452,12 @@ class Resource(typing.NamedTuple):
             return self.columns(extras, dict(query))
         return self.columns
 
+    def action(self, name):
+        for doing in self.actions:
+            if doing.name == name:
+                return doing
+        return None
+
     def query_from(self, given):
         """The filters this resource understands, as the request gave them.
 
@@ -466,6 +483,30 @@ CATALOGUE = {
             slug="servers",
             filters=(Filter("name", "Name"), Filter("status", "Status")),
             all_projects=True,
+            actions=(
+                Action(
+                    "start",
+                    "Start",
+                    lambda connection, name: connection.compute.start_server(name),
+                    "Starting {name}.",
+                ),
+                Action(
+                    "stop",
+                    "Stop",
+                    lambda connection, name: connection.compute.stop_server(name),
+                    "Stopping {name}.",
+                ),
+                Action(
+                    # SOFT, which is what `server reboot` sends unless it
+                    # is told --hard.
+                    "reboot",
+                    "Reboot",
+                    lambda connection, name: connection.compute.reboot_server(
+                        name, "SOFT"
+                    ),
+                    "Rebooting {name}.",
+                ),
+            ),
             service="compute",
             heading="Servers",
             index=lambda connection, **q: connection.compute.servers(**q),

@@ -4,7 +4,7 @@ import os
 
 import flask
 
-from . import config, errors, sessions, views
+from . import config, csrf, errors, sessions, views
 
 __version__ = "0.1.0"
 
@@ -38,4 +38,5 @@ def create_app(**overrides):
     app.register_blueprint(views.bp)
     sessions.install(app)
     errors.register(app)
+    csrf.register(app)
     return app

@@ -3,6 +3,7 @@
 import typing
 
 import flask
+import openstack.exceptions
 
 from . import auth, errors, fields, resources
 
@@ -209,6 +210,45 @@ def collection(project_id, kind):
         )
 
 
+# What a service says when an action does not apply: starting a server
+# that is already running, rebooting one that is building. The CLI prints
+# the reason and stops; a 500 would be a lie about whose fault it is.
+REFUSALS = (400, 409)
+
+
+@bp.route("/projects/<project_id>/<kind>/<item_id>/<action>", methods=["POST"])
+@auth.login_required
+def act(project_id, kind, item_id, action):
+    """`openstack <kind> <action> <id>`."""
+    resource = _kind(kind)
+    doing = resource.action(action)
+    if doing is None:
+        flask.abort(404)
+    with errors.scoped(project_id) as connection:
+        errors.about(resource.label)
+        # Fetched before acted on, as the CLI resolves a name first: it
+        # gives a 404 for something that is not there, and a name to put
+        # in the message afterwards.
+        found = resource.fetch(connection, item_id)
+        named = found.name or item_id
+        try:
+            doing.perform(connection, item_id)
+        except openstack.exceptions.HttpException as refused:
+            if refused.status_code not in REFUSALS:
+                raise
+            flask.flash(f"{doing.label} was refused: {_reason(refused)}", "error")
+        else:
+            flask.flash(doing.done.format(name=named), "done")
+    return flask.redirect(
+        flask.url_for("ui.item", project_id=project_id, kind=kind, item_id=item_id)
+    )
+
+
+def _reason(refused):
+    """The service's own words, without the wrapping the SDK adds."""
+    return (getattr(refused, "details", "") or str(refused)).strip()
+
+
 @bp.route("/projects/<project_id>/<kind>/<item_id>")
 @auth.login_required
 def item(project_id, kind, item_id):
@@ -223,6 +263,10 @@ def item(project_id, kind, item_id):
             heading=found.name or found.id,
             crumbs=_crumbs(project_id, connection, resource),
             fields=resource.details(connection, found),
+            actions=resource.actions,
+            project_id=project_id,
+            kind=kind,
+            item_id=found.id,
         )
 
 

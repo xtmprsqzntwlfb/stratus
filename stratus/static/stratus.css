@@ -154,3 +154,6 @@ dd { font-family: ui-monospace, monospace; font-size: 0.9em; }
 .filters input[type="text"], .filters input:not([type]) { width: 10rem; }
 .filters .tick { display: flex; align-items: center; gap: 0.3rem; }
 .filters .clear { color: var(--dim); font-size: 0.85rem; }
+
+.actions { display: flex; gap: 0.5rem; margin-bottom: 1.2rem; }
+.flash.done { border-left-color: seagreen; }

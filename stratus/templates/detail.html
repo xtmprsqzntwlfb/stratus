@@ -5,6 +5,19 @@
 {% include "crumbs.html" %}
 <h1>{{ heading }}</h1>
 
+{% if actions %}
+<div class="actions">
+  {% for doing in actions %}
+  <form method="post"
+        action="{{ url_for('ui.act', project_id=project_id, kind=kind,
+                           item_id=item_id, action=doing.name) }}">
+    {% include "csrf.html" %}
+    <button type="submit">{{ doing.label }}</button>
+  </form>
+  {% endfor %}
+</div>
+{% endif %}
+
 {% if holds %}
 <ul class="resources">
   {% for label, url in holds %}

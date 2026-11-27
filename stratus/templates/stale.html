@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}That form has expired &mdash; Stratus{% endblock %}
+
+{% block content %}
+<h1>That form has expired</h1>
+<p class="note">
+  It was drawn for a session that has since ended, or it did not come from
+  here. Nothing was done. Go back, reload the page and try again.
+</p>
+<p><a href="{{ url_for('ui.projects') }}">Back to the projects</a></p>
+{% endblock %}

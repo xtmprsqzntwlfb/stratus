@@ -29,6 +29,7 @@ import uuid
 import flask
 import keystoneauth1.exceptions
 import openstack.exceptions
+import werkzeug.exceptions
 
 from . import auth
 
@@ -122,6 +123,11 @@ def register(app):
 
 def respond_to(failure):
     """Sort one failure into one of the four answers."""
+    if isinstance(failure, werkzeug.exceptions.HTTPException):
+        # A 405, a 413, anything Flask raised on purpose. It already
+        # knows what that should look like, and calling it an unhandled
+        # failure would log a bug that is not there.
+        return failure
     if _token_is_finished(failure):
         return session_over()
     if _denied_or_absent(failure):

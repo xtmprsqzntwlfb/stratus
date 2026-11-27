@@ -261,6 +261,9 @@ def renew():
     session = flask.session
     if getattr(session, "name", None):
         _store().drop(session.name)
+    # Emptied as well as renamed: nothing from before a login has any
+    # business surviving it, the CSRF token for that session included.
+    session.clear()
     session.name = None
     session.modified = True
 

@@ -116,6 +116,33 @@ from volume)` in those words, because people grep for them. Nested values
 render as `key=value` pairs rather than as a Python dictionary, keeping the
 empty ones as the CLI keeps them.
 
+## Doing something
+
+A kind declares what the CLI can do to one of its things, and the show page
+grows a button for each. Servers have `start`, `stop` and `reboot`, which is
+`openstack server start|stop|reboot`, the reboot being the soft one the CLI
+sends unless told `--hard`.
+
+Each one is a POST to `/projects/<id>/<kind>/<id>/<action>`, and like the
+CLI it looks the thing up before acting, so a name can be put in the message
+afterwards and an id that is not there is a 404 rather than a surprise.
+
+A service refusing a verb is not a failure of this application. Starting a
+server that is already running comes back as a 409 with nova's own
+explanation, and that is what the page says, next to the thing, rather than
+an error page.
+
+### Forms
+
+Every POST carries a token the session knows, checked before anything runs.
+A browser attaches its cookies to whatever request it makes, including one
+another site provoked, so a session alone proves nothing about who drew the
+form. `SameSite=Lax` refuses that request too, but it is one header resting
+on one browser's reading of it.
+
+The token does not survive a login: a new session keeps nothing from the one
+before it.
+
 ## Narrowing a listing
 
 Each kind declares the filters the CLI has for it, and a listing page puts
